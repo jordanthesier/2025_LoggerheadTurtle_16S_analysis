@@ -8,7 +8,7 @@ editor_options:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, fig.align = "center", fig.path = "../figures/01_QualityTrimming")
+knitr::opts_chunk$set(echo = TRUE, fig.align = "center", fig.path = "../figures/01_QualityTrimming/")
 ```
 
 # Goals of this file 
@@ -168,21 +168,21 @@ preQC_aggregate_plot
 
 Above are plots showing the pre-QC quality scores of the raw sequencing data for the project. We can draw a few conclusions from the plots above, which were generated with 2x300 bp sequencing on an Illumina MiSeq v3 Sequencer: 
 
-1.	*High Quality in Early and Mid-Reads (~0-175 Cycles/Bases):* 
+1.	*High Quality in Early and Mid-Reads (~0-200 Cycles/Bases):* 
     - Quality is above Q30 in the first half of both forward and reverse reads.
-    - Notably, the forward reads continue with high quality scores farther than the reverse reads (~0-250 Cycles/Bases).
+    - Notably, the forward reads continue with high quality scores (>Q30) farther than the reverse reads (~0-250 Cycles/Bases).
     - This suggests that at least half of the read length is high-quality and can be retained, and that we don't need to trim the beginning of the reads.
 2.	*Decline in Forward Reads After ~250 Cycles/Bases:*
-    - The last ~ 8 bases of the forward reads shows a drop below 30, indicating a high sequencing error rate.
-        - This was also seen in fastQC and multiQC, but only the last 5 bases look <25.
-    - **Solution**: We will truncate the read using ` truncLen = 295` to remove those final 5 poor-quality bases at the end of the read. The beginning of the read is >30 so we are ok at the beginning of the read.
-3.  *Decline in Reverse Reads After ~175 Cycles/Bases:*
+    - The last ~ 30 bases of the forward reads shows a drop below 30, indicating a high sequencing error rate.
+        - This was also seen in fastQC and multiQC, we should trim these off.
+    - **Solution**: We will truncate the read using ` truncLen = 270` to remove those final 30 poor-quality bases at the end of the read. The beginning of the read is >30 so we are ok at the beginning of the read.
+3.  *Decline in Reverse Reads After ~200 Cycles/Bases:*
     - The reverse reads degrade more quickly than the forward reads, more on this below.
-    - The last ~ 70 bases of the reverse reads shows a drop below 30, indicating a high sequencing error rate.
-      - This was also seen in fastQC and multiQC, but only the last ~50 bases look <25.
-    - **Solution**: We will truncate the read using ` truncLen = 250` to remove those final 50 poor-quality bases at the end of the read. The beginning of the read is >30 so we are ok at the beginning of the read.
+    - The last ~ 80 bases of the reverse reads shows a drop below 30, indicating a high sequencing error rate.
+      - This was also seen in fastQC and multiQC, but only the last ~60 bases look <25.
+    - **Solution**: We will truncate the read using ` truncLen = 220` to remove those final 80 poor-quality bases at the end of the read. The beginning of the read is >30 so we are ok at the beginning of the read.
 4.	*Forward Reads Maintain Quality Slightly Longer*
-    - Forward reads degrade after ~250 cycles, while reverse reads degrade after ~175 cycles.
+    - Forward reads degrade after ~250 cycles, while reverse reads degrade after ~200 cycles.
     
 General notes on Illumina sequencing
 
@@ -230,12 +230,15 @@ head(filtered_reverse_reads)
 ```{r filter-and-trim}
 # Assign and write out filtered fastq files 
 # Paper noted that the obtained sequences had non-biological sequences trimmed by the sequencing facility. We do not need to trim out primers.
-# I'm nervous and I want to be safe and use the default parameters
+# Quality is not great - using maxEE(1,1)
+# To remove low quality tails use truncLen = c(275,220)
 
 filtered_reads <- 
   filterAndTrim(fwd = forward_reads, filt = filtered_forward_reads,
               rev = reverse_reads, filt.rev = filtered_reverse_reads,
-              maxN = 0, maxEE = c(2,2),
+              maxN = 0, maxEE = c(1,1),
+              # Truncate forward reads to 275bp, reverse reads to 220bp
+              truncLen = c(275,220),
               truncQ = 2, rm.phix = TRUE, compress = TRUE, 
               # Please set threads to be 8-10 (we want to respect others using the server!)
               # Note that if TRUE, it will use ALL threads (making it hard for others to use the server)
@@ -282,16 +285,16 @@ postQC_aggregate_plot <-
 postQC_aggregate_plot
 ```
 
-This post-QC quality score plot from 102 aggregated Illumina sequencing files shows the forward (left) and reverse (right) reads after quality filtering and trimming.
+This post-QC quality score plot from 51 aggregated Illumina sequencing files shows the forward (left) and reverse (right) reads after quality filtering and trimming.
 
 - *Forward Reads Post-QC*
   - High-quality (Q30+) bases throughout most of the read length.
-  - A slight decline after ~250 cycles, only the last ~5 bases below a Phred of 30.
+  - A slight decline after ~250 cycles, but does not go below a Phred of 30.
 - *Reverse Reads Post-QC*
-  - First half (~0-175 cycles) remain stable and high-quality (Q30+).
-  - A noticeable decline in quality after ~175 cycles, improved compared to pre-QC. The last ~40 bases of post-filtered reads < Q30, compared the last ~70 bases of pre-filtered reads < Q30.
+  - First half (~0-200 cycles) remain high-quality (Q30+).
+  - A noticeable decline in quality after ~200 cycles, greatly improved compared to pre-QC. The last ~20 bases of post-filtered reads approach Q30, but stay above Q25.
 
-**Takeaway:** Quality filtering partially successfully retained high-quality bases while removing some low-quality ends.
+**Takeaway:** Quality filtering successfully retained high-quality bases while removing low-quality ends, especially in the reverse reads.
 
 To further confirm that things look ok, let's take a look at the read retention of our QC step.
 
@@ -362,11 +365,10 @@ This figure presents three panels showing how many sequences were retained after
 
 *Interpretation of Panel A:*  
 
-Note: the x- and y-axis scales are different
-- In general, most points are below the diagonal, meaning most samples lost sequences during filtering.
+- In general, most points are close to the diagonal, meaning most samples retained sequences during filtering.
 - As the number of raw sequences in a sample increases, the number of sequences retained seems to decrease.
-- There are two outliers with a higher number of raw reads that fall far from the line.
-Overall, retention of reads across most samples was not ideal.
+- There are two outliers with a higher number of raw reads that fall farther below the line.
+Overall, retention of reads across samples was great.
 
 **Panel B: Histogram of the Number of Sequences Retained per Sample**  
 
@@ -376,8 +378,8 @@ Overall, retention of reads across most samples was not ideal.
 *Interpretation of Panel B*  
 
 - The majority of samples retained less than 300,000 sequences, but most had less than 500,000 raw reads.
-- The two ouliers from above are biasing the scale. These two had ~ 1,180,000 raw reads and retained ~ 800,000 sequences.
-- There are some samples that has almost no reads and will need to be removed!
+- The two ouliers from above are biasing the scale. These two had ~ 1,180,000 raw reads and retained ~ 1,000,000 sequences.
+- There are some samples that have almost no reads and will need to be removed! Hopefully these are the negative controls.
 Overall, it is difficult to tell whether samples retained a high number of sequences, and a graph of percent of sequences retained will provide better visual information (see Panel C).
 
 **Panel C: Histogram of Percent of Sequences Retained**  
@@ -387,10 +389,10 @@ Overall, it is difficult to tell whether samples retained a high number of seque
 
 *Interpretation of Panel C*. 
 
-- Most samples retained >50% of their sequences, the largest group retaining just over 60%.
-- Filtering did remove a lot of sequences.
-- **Max % Retained** is `r read_stats_df$max_percent_retained` is ok while **min % retained is** `r read_stats_df$min_percent_retained` is probably really bad.
-- A **median % retained ** of `r read_stats_df$median_percent_retained` is closer to the maximum value retained which is good, but the number itself is ok. 
+- Most samples retained >75% of their sequences, the largest group retaining just over 80%. Filtering did not aggressively remove data.
+- A couple samples retained <50% of their sequences. These could be the two outliers from above, or our negative controls.
+- **Max % Retained** is `r read_stats_df$max_percent_retained` is great while **min % retained is** `r read_stats_df$min_percent_retained` is pretty poor.
+- A **median % retained ** of `r read_stats_df$median_percent_retained` is great. 
 
 
 **Consider re-running your `filterAndTrim()` if:** 
