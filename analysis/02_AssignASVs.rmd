@@ -316,7 +316,7 @@ Now that we are pretty convinced that we have some spurious ASVs, we will trim A
 *Let's trim the ASVs to only be the right size, which is 245!* 
 
 ```{r trim-ASVs}
-# Subset only ASVs that are 245 bps long 
+# Subset only ASVs that are 422-427 bps long 
 raw_ASV_table_trimmed <- 
   raw_ASV_table[, nchar(colnames(raw_ASV_table)) >= 422 & nchar(colnames(raw_ASV_table)) <= 427]
 
