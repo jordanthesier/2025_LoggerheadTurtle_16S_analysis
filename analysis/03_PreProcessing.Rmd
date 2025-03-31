@@ -501,7 +501,7 @@ for(i in 1:length(asv_seqs)){ # For each asv sequence...
 cat("For", sum(asv_rev_comp) / 2,"ASVs, the reverse complement will need to be removed") 
 ```
 
-Interpretation 4: 
+Interpretation 4: I have zero reverse compliments in my dataset!
 
 # 8. Sequencing Depth 
 

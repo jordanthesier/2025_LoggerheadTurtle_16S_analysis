@@ -426,7 +426,7 @@ The ASV for node **#1524** only goes to Order level: **Candidatus Moranbacteria*
     - **E-value:** 0
     - **% Identity:** 99.29%
     
-`ASV_1929` and `ASV_6374` are likely real ASVs. 
+`ASV_1929` and `ASV_6374` are likely real ASVs. We will keep these for now.
 
 ## 4b. Prune your tree
 
@@ -507,7 +507,7 @@ midpoint_rooted_physeq <-
   merge_phyloseq(raw_preprocessed_physeq, midpoint_rooted_tree)
 ```
 
-Now, we have a merged phyloseq object! Let's take a look at what it looks like and see how it compares with the archaeal rooted tree above. 
+Now, we have a merged phyloseq object! Let's take a look at what it looks like. 
 
 ### Plot Midpoint Rooted Tree
 
@@ -538,9 +538,9 @@ Interpretation 3: This tree seems finalized. The long branches I have already in
 
 The phyloseq objects can be saved in one file as a list of objects. Or, we can save them individually. Two examples are below: 
 
-### Save multiple phyloseq objects as a list
+### Save individual phyloseq objects
 
-Here, we will create two individual files that will each have a single phyloseq object. This is useful if we only want to work with one tree. (For example, we will move forward with the archaeal tree.) 
+Here, we will create one file that will have a single phyloseq object. This is useful if we only want to work with one tree.
 
 ```{r save-phyloseq-object}
 # Now, save midpoint rooted phyloseq object

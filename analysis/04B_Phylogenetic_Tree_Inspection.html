@@ -1133,8 +1133,8 @@ Reef.” This is a very strong alignment.
 <li><strong>% Identity:</strong> 99.29%</li>
 </ul></li>
 </ul>
-<p><code>ASV_1929</code> and <code>ASV_6374</code> are likely real
-ASVs.</p>
+<p><code>ASV_1929</code> and <code>ASV_6374</code> are likely real ASVs.
+We will keep these for now.</p>
 </div>
 <div id="b.-prune-your-tree" class="section level2">
 <h2>4b. Prune your tree</h2>
@@ -1277,8 +1277,7 @@ is.rooted(midpoint_rooted_tree)</code></pre>
 midpoint_rooted_physeq &lt;-
   merge_phyloseq(raw_preprocessed_physeq, midpoint_rooted_tree)</code></pre>
 <p>Now, we have a merged phyloseq object! Let’s take a look at what it
-looks like and see how it compares with the archaeal rooted tree
-above.</p>
+looks like.</p>
 </div>
 <div id="plot-midpoint-rooted-tree" class="section level3">
 <h3>Plot Midpoint Rooted Tree</h3>
@@ -1309,11 +1308,10 @@ already inspected and determined to be real.</p>
 <h2>7. Save phyloseq objects</h2>
 <p>The phyloseq objects can be saved in one file as a list of objects.
 Or, we can save them individually. Two examples are below:</p>
-<div id="save-multiple-phyloseq-objects-as-a-list" class="section level3">
-<h3>Save multiple phyloseq objects as a list</h3>
-<p>Here, we will create two individual files that will each have a
-single phyloseq object. This is useful if we only want to work with one
-tree. (For example, we will move forward with the archaeal tree.)</p>
+<div id="save-individual-phyloseq-objects" class="section level3">
+<h3>Save individual phyloseq objects</h3>
+<p>Here, we will create one file that will have a single phyloseq
+object. This is useful if we only want to work with one tree.</p>
 <pre class="r"><code># Now, save midpoint rooted phyloseq object
 save(midpoint_rooted_physeq, 
      file = &quot;data/04_PhylogeneticTree/midpoint_rooted_physeq.RData&quot;)</code></pre>
@@ -1329,11 +1327,11 @@ go forth and begin our next analysis!</p>
 <pre class="r"><code># Take the time now that we are at the end of the script
 end_time &lt;- Sys.time()
 end_time </code></pre>
-<pre><code>## [1] &quot;2025-03-31 12:20:05 EDT&quot;</code></pre>
+<pre><code>## [1] &quot;2025-03-31 18:55:20 EDT&quot;</code></pre>
 <pre class="r"><code># Echo the elapsed time
 elapsed_time &lt;- round((end_time - start_time), 3)
 elapsed_time</code></pre>
-<pre><code>## Time difference of 45.38 secs</code></pre>
+<pre><code>## Time difference of 48.852 secs</code></pre>
 </div>
 <div id="session-information" class="section level2">
 <h2>Session Information</h2>
