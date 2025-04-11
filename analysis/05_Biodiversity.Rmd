@@ -1,0 +1,761 @@
+---
+title: "Biodiversity of Loggerhead Sea Turtles"
+author: "Jordan"
+date: "2025-04-09"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.path = "../figures/05_Biodiversity/")
+```
+
+# Goals 
+
+Run an analysis on the within-sample biodiversity of the samples in our project. 
+
+1. Calculate the Hill Numbers of the samples using the iNEXT package. 
+2. Plot and evaluate the interpolated and extrapolated rarefaction curves from iNEXT. 
+3. Analyze the Hill numbers as it relates to stations and salinity (in PSU).
+4. Test and then answer the scientific question at hand! (Remember, we're doing biology!)
+
+## Inputs 
+
+1. We will need the `phytree_preprocessed_physeq`, which includes a rooted tree that we created in `analysis/04B_Phylogenetic_Tree_Inspection.Rmd`. 
+
+## Outputs 
+
+1. Calculated biodiversity measures (Hill numbers) across every sample. 
+2. Figures to include in our scientific paper that visualize the data as it relates to the scientific question.
+3. Statistical tests conveying the measured and quantified changes and patterns in biodiversity.
+
+# Scientific Question
+
+## Question & Hypotheses
+
+How does microbial diversity of Loggerhead sea turtles change with age?
+
+- *Null Hypothesis:* Microbial biodiversity (*e.g.* richness) does not vary with age.
+- *Alternative Hypothesis:* Microbial biodiversity (*e.g.* richness) will increase as age increases. There is a positive relationship between richness and age.
+
+## Field site background
+The authors of this paper found Loggerhead sea turtles strained, injured, or unintentionally caught by fishermen in the Adriatic Sea area (one turtle named Angelo found in Tyrrhenian Sea), and transported them to recovery centres in Bari, Italy (Sea Turtle Clinic DVM University of Bari) and Pula (Aquarium Pula) Croatia where they received appropriate treatment.
+
+## Timing of this script
+
+```{r rmd-start}
+# What time did we start running this script? 
+start_time <- Sys.time()
+```
+
+## Set the seed 
+```{r set-seed}
+set.seed(238428)
+```
+
+## Load Packages & Colors 
+
+```{r load-packages-colors}
+# install packages for stats
+#install.packages("rstatix")
+#install.packages("ggpubr")
+
+pacman::p_load(tidyverse, devtools, patchwork, iNEXT, phyloseq,
+               # packages for stats
+               ggpubr, rstatix, install = FALSE)
+
+# Load in colors for plotting 
+source("code/colors.R")
+```
+
+## Load in Data 
+
+```{r load-data}
+load("data/04_PhylogeneticTree/midpoint_rooted_physeq.RData")
+
+# take a look at it! 
+midpoint_rooted_physeq
+
+# Intuition check on seq depth
+min(sample_sums(midpoint_rooted_physeq))
+
+# Make a metadata dataframe 
+metadata_df <- 
+  midpoint_rooted_physeq %>%
+  sample_data() %>%
+  data.frame()
+
+# view of it
+glimpse(metadata_df)
+```
+
+# Biodiversity Hill Numbers with iNEXT
+
+
+## Hill Number Equation
+
+Next, we will calculate the biodiversity with the [iNEXT package](https://besjournals.onlinelibrary.wiley.com/doi/full/10.1111/2041-210X.12613) package. iNEXT focuses on three measures of biodiversity via the Hill numbers. Hill numbers have the order q: 
+
+$$
+{}^qD = \left( \sum_{i=1}^{S} p_i^q \right)^{1/(1 - q)}, \quad q \geq 0, \quad q \neq 1.
+$$
+
+But when *q = 1*, then the equation is: 
+
+$$
+{}^1D = \lim_{q \to 1} {}^qD = \exp\left( - \sum_{i=1}^{S} p_i \log p_i \right) = \exp(H_{sh}).
+$$
+
+
+**Where:**
+
+- \( {}^qD \) is the *Hill number* or *diversity of order \( q \)*, a measure of species diversity.
+- \( q \) is the *order of diversity*, which determines how sensitive the measure is to species relative abundances:
+  - \( q = 0 \): all species are weighted equally or **species richness**,
+  - \( q = 1 \): corresponds to the exponential of **Shannon entropy**,
+  - \( q = 2 \): corresponds to the **inverse of Simpson’s index**.
+- \( S \) is the *total number of species* in the community.
+- \( p_i \) is the *relative abundance* of species \( i \), i.e., the proportion of individuals in the community belonging to species \( i \).
+
+### When \( q = 0 \): Counting *All* ASVs Equally  
+> *Species Richness* → \( {}^0D \)
+
+Here, we ignore how common or rare each ASV is. Every ASV counts equally — even ones that appear just once.
+
+Here, in the context of microbial communities, we are pondering: **“How many different ASVs are present?”** We do not weight them by abundance/evenness in any way. Rather, we focus on a binary measures of 0s and 1s that represent presence (1) and absence (0).
+
+### When \( q = 1 \): Balancing Rarity and Commonness  
+> *Shannon Diversity* → \( {}^1D \)
+
+Now we ask: **"How evenly are the ASVs distributed?"** Rare ASVs matter, but not as much as common ones.
+
+### When \( q = 2 \): Focus on the Most Abundant ASVs  
+> *Simpson-like Diversity* → \( {}^2D \)
+
+Now we modify our question to wonder: **How many ASVs dominate each sample?** Here, rare ASVs hardly matter.
+
+Next, we will calculate the biodiversity with the [iNEXT package](https://besjournals.onlinelibrary.wiley.com/doi/full/10.1111/2041-210X.12613) package. iNEXT focuses on three measures of biodiversity via the Hill numbers. For each Hill NUmber [iNEXT package](https://besjournals.onlinelibrary.wiley.com/doi/full/10.1111/2041-210X.12613) uses the observed abundance of species within a sample to compute diversity estimates and the associated 95% confidence intervals for the following two types of rarefaction and extrapolation (R/E):
+
+1. **Sample-size-based (or size-based) R/E curves**: iNEXT computes diversity estimates for
+rarefied and extrapolated samples up to an appropriate size (2x the total number of individuals/sequences in that sample). This type of sampling curve plots the diversity estimates with respect to sample size.
+2. **Coverage‐based R/E curves:** iNEXT computes diversity estimates for rarefied and extrapolated samples based on a standardized level of sample completeness (as measured by sample coverage) up to an appropriate coverage value. This type of sampling curve plots the diversity estimates with respect to sample coverage. **NOTE: Coverage is inapplicable to DADA2 datasets, as they lack singletons** (this is also why we can’t use Amy Willis’s breakaway approach). 
+
+*An important note:* We’ll be using the size_based output. Our lab has previously been suspicious of the Asymptotic Estimator. Therefore we will use the size_based approach here, with the caveat that we will very rigorously confirm that we’ve approached saturation for all of our samples! 
+
+```{r iNEXT-biodiversity}
+# prepare the input data 
+# Species in rows and the samples in columns 
+iNEXT_input_df <- 
+  midpoint_rooted_physeq %>%
+  otu_table() %>%
+  data.frame()
+
+# Inpect 
+dim(iNEXT_input_df)
+iNEXT_input_df[1:5, 1:5]
+
+# Run iNEXT 
+# Remember to set the seed!
+# ASVs in ROWs, samples in COLUMNS 
+#iNEXT_data <- iNEXT(iNEXT_input_df, 
+#                    q = c(0, 1, 2),
+#                    datatype = "abundance")
+
+# Inspect 
+#str(iNEXT_data)
+#typeof(iNEXT_data)
+
+# Save RData
+#save(iNEXT_data, 
+#     file = "data/05_Biodiversity/iNEXT_data.RData")
+```
+
+```{r load-iNEXTdata}
+load("data/05_Biodiversity/iNEXT_data.RData")
+
+# Inspect 
+str(iNEXT_data)
+typeof(iNEXT_data)
+
+```
+
+
+# Rarefaction Curves 
+
+## `ggiNEXT` Rarefaction Curves 
+
+```{r iNEXT-colors}
+# Prepare Colors 
+color_df <- 
+  iNEXT_input_df %>%
+  colnames() %>%
+  data.frame()
+# Check
+head(color_df)
+# Rename the column 
+colnames(color_df)[1] <- "names"
+# Check
+head(color_df)
+
+# Make a helper dataframe for plotting with colors 
+iNEXT_color_df <- 
+  color_df %>%
+  # Fix the names for merging
+  mutate(names = gsub("X", "", names)) %>%
+  # Merge with metadata
+  left_join(metadata_df, by = "names") %>%
+  # Merge with colors for plotting with ggiNEXT
+  left_join(data.frame(AgeRange_colors = AgeRange_colors,
+                       AgeRange = names(AgeRange_colors)), 
+            by = "AgeRange")
+
+head(iNEXT_color_df)
+```
+
+```{r plot-iNEXT-rarefaction}
+ggiNEXT(iNEXT_data, type = 1, facet.var = "Order.q") + 
+  scale_color_manual(values = iNEXT_color_df$AgeRange_colors) + 
+  scale_fill_manual(values = iNEXT_color_df$AgeRange_colors) + 
+  scale_shape_manual(values = base::rep(17, nsamples(midpoint_rooted_physeq))) + 
+  theme_bw() + 
+  theme(legend.position = "none") + 
+  labs(y = "Effective Number of ASVs", x = "Number of Sequences") 
+```
+
+Remembering that an Order q of:  
+
+  - 0 = Richness/ Number of Total taxa
+  - 1 = Exponential Shannon / Number of "Common" taxa
+  - 2 = Inverse Simpson / Number of "Dominant" taxa 
+
+*Also note that iNEXT will extrapolate the number of sequences to double the sequencing depth of the sample!* This extrapolation is represented by the dotted line, which extends to 2 x the library size of the sample. 
+
+Let's draw some conclusions from the plot above:
+
+1. The best gift of the Hill Numbers: *All three diversity measures are on the same x-axis: The Effective Number of Species or ASVs.*  
+2. As q increases from 0 to 1 to 2, the abundance of the species is weighted more, so the rarefaction curve plateaus earlier. This is important because it **indicates that richness is the most sensitive to sequencing depth!** However, Shannon and even less sensitive is Simpson.  
+3. Most of the sample rarefaction curves appear to plateau but we need to look deeper to truly confirm this.  
+
+Let's manually plot the data that we pull out from the iNEXT data.
+
+## Manual Rarefaction Curves 
+
+```{r manual-rarefaction}
+str(iNEXT_data)
+
+iNEXT_manual_df <- 
+  iNEXT_data$iNextEst$size_based %>%
+  dplyr::rename(names = Assemblage) %>%
+  # fix the samples to merge with metadata 
+  mutate(names = gsub(names, pattern = "X", replace = "")) %>%
+  # join with the metadata
+  left_join(., metadata_df, by = "names") %>%
+  mutate(AgeRange = factor(AgeRange, levels = c("JUVENILE",
+                                              "SUB-ADULT",
+                                              "ADULT")))
+
+# Inspection
+dim(iNEXT_manual_df)
+
+# Manually plot rarefaction curves 
+iNEXT_manual_df %>%
+  # Filter out rows that are calculated with actual sequences (no extrapolated)
+  dplyr::filter(Method == "Rarefaction") %>%
+  # Now, let's draw the plot! 
+  ggplot(aes(x = m, y = qD, color = AgeRange, group = names)) + 
+  geom_line() + 
+  # Facet by station 
+  facet_grid(Order.q~AgeRange, scales = "free") + 
+  scale_color_manual(values = AgeRange_colors) + 
+  theme_bw() + 
+  labs(y = "Effective Number of ASVs", x = "Number of Sequences") + 
+  theme(legend.position = "bottom")
+```
+
+Interpretation 1: There are more juvenile turtles than sub-adult or adult turtles. These turtles are endangered so maybe they are dying at younger ages than normal. It's a little bit hard to tell but it looks like all curved asymptote (some just barely in the sub-adults), indicating there are enough sequences to analyze the samples. 
+
+- *Richness: q = 0*  
+    - All the samples with **richness plateau! (JUST barely with some sub-adults) This is essential and determines whether or not we can make conclusions about the observed richness!** If the richness values do not plateau, then we cannot make any assertions regarding the ASV richness in the samples because the samples have not been sequenced deeply enough to measure this. Instead, we *might* be able to rely on the extrapolated values, however, this will require a lot of caution. 
+    - I think my two outliers from processing this data are from a sub-adult and an adult.
+    - Excluding outliers, adults may have less total richness, and juveniles and sub-adults may have roughly the same richness.
+- *Shannon Diversity: q = 1*
+    - There doesn't seem to be much of a difference between age groups.
+- *Simpson's Diversity: q = 2* 
+    - The adult outlier fits much better with the data here, but the sub-adult outlier is still outlier-ing.
+    - Excluding the outlier, sub-adults and adults may have less ASVs than junveniles, even though this is not what I was expecting. 
+
+
+# Statististical Testing 
+
+So, how do we actually quantify the changes in biodiversity that we may observe between the samples? That takes us into statistics! 
+
+
+## Parametric vs. Non-Parametric Statistics??
+
+| Feature                     | Parametric                                | Non-Parametric                          |
+|----------------------------|--------------------------------------------|-----------------------------------------|
+| **Assumptions**            | Assumes a known distribution (usually normal) | Fewer assumptions about distribution    |
+| **Data Type**              | Continuous (interval/ratio)                | Ordinal or non-normal continuous        |
+| **Examples**               | t-test, ANOVA, linear regression           | Wilcoxon, Kruskal-Wallis, Spearman      |
+| **Estimates Based On**     | Parameters like mean and variance          | Ranks or medians                        |
+| **Sensitive to Outliers?**| Yes                                        | Less sensitive                          |
+| **Statistical Power**      | Higher if assumptions are met              | Lower but more robust to violations     |
+
+### Parametric Statistics
+
+Parametric tests assume that the data follow a specific distribution (usually a normal/Gaussian distribution). They are more statistically powerful **if those assumptions are met**. Some examples include, comparing means with a t-test or ANOVA or modeling relationships using linear regression. 
+
+### Non-Parametric Statistics
+
+Non-parametric tests do not assume a specific data distribution and are more robust to outliers. However, they are less robust compared to parametric statistics because of this flexibility. Some examples include wilcoxon tests to compare diversity between sample types. Non-parametric tests are ideal when:
+
+- Data are skewed or non-normal
+- Sample sizes are small
+- Outliers are present
+- You’re analyzing ranks (*e.g.,* ordinal data) or medians
+
+## How do I test if my data is "normal"? 
+
+Typically people perform a **Shapiro-Wilk Test** on their data. The Shapiro-Wilk test is a statistical test used to check whether a sample of data comes from a normally distributed population.
+
+The Shapiro-Wilk test calculates a **W statistic** by comparing the order statistics (sorted values) of your data with those expected from a normal distribution.
+
+- **W ≈ 1** → data is close to normal.
+- **W < 1** → increasing deviation from normality.
+
+What hypothses does the Shapiro-Wilk Test? 
+
+- *Null hypothesis (H₀):* The data are normally distributed.
+    - *p-value > 0.05*: Fail to reject H₀ and the data appears normal.
+- *Alternative hypothesis (H₁):* The data are *not* normally distributed.
+    - *p-value < 0.05*: We can reject the H₀, which will indicate that the data is **not normal**.
+
+
+**How to run the Shapiro-Wilk test?**
+
+
+*Run Shapiro-Wilk for Weight*
+
+```{r shapiro-wilk-salinity}
+# Test of the data is normal for the continuous value of weight
+shapiro.test(metadata_df$Weight)
+```
+
+The p value is < 0.05, indicating that we can reject the  H₀, which will indicate that the data is **not normal**. Therefore, we need to use non-parametric statistical tests in the data. 
+
+However, I want to look at Age, which is only designated by **JUVENILE**, **SUB-ADULT**, and **ADULT**.
+
+*Is the richness data normal?*
+
+```{r shapiro-wilk-richness}
+### Now what about for richness? 
+obs_div_df <- 
+  iNEXT_manual_df %>%
+  dplyr::filter(Method == "Observed") 
+
+# check it
+glimpse(obs_div_df)
+
+# Pull out richness
+obs_whole_rich_df <- 
+  obs_div_df %>%
+  dplyr::filter(Order.q == 0)
+
+# Test of the data is normal for the continuous value of richness
+shapiro.test(obs_whole_rich_df$qD)
+```
+
+**No, the diversity data is NOT normal.** This means we must use nonparamentric tests. 
+
+## Statistics in Microbial Ecology
+
+Generally speaking, we tend to use non-parametric tests in microbial ecology. It's safer to go this way. However, if there is a test performed to show that the data is normally distributed, then we can access the robustness of parametric tests! 
+
+| **Research Question**                        | **Parametric Test**       | **Non-Parametric Test**       |
+|---------------------------------------------|----------------------------|-------------------------------|
+| Compare alpha diversity (2 groups)          | t-test                     | Wilcoxon rank-sum test        |
+| Compare alpha diversity (more than 2 groups)| ANOVA                      | Kruskal-Wallis test           |
+| Correlate diversity with environmental data | Pearson correlation        | Spearman correlation          |
+| Test differences in beta diversity          | *Not applicable* (uses distance matrices) | PERMANOVA (non-parametric)  |
+| Model transformed taxon abundances          | Linear regression, GLM     | Rank-based regression         |
+
+**Takeaways about statistics**
+
+- **Parametric statistics** use data values directly (means, variances) and are more powerful when assumptions (*e.g.,* normality, homoscedasticity) are met.
+- **Non-parametric statistics** use ranks and are more powerful when there are violations of assumptions that are made in parametric statistics, making them a safer choice for skewed, sparse, or ordinal data, which is commonplace in microbial ecology. 
+- In microbial ecology, non-parametric methods are commonly used due to the nature of microbiome data (*e.g.,* zero-inflated, non-normal, compositional), but **parametric tests are absolutely valid** when assumptions are met or appropriate transformations are applied.
+
+Choose your statistical approach based on the:
+
+- Type and distribution of your data
+- Question you're asking
+- Assumptions your data can reasonably meet
+
+# Categorical Analysis: 2 or more groups 
+
+## Diversity by Age Group
+
+```{r make-obs-df}
+# Plot boxplots by Age Group against diversity
+obs_div_df %>%
+  ggplot(aes(x = AgeRange, y = qD, fill = AgeRange, 
+             color = AgeRange)) + 
+  facet_wrap(.~Order.q, scales = "free_y") + 
+  geom_jitter() + 
+  geom_boxplot(alpha = 0.5, outlier.shape = NA) + 
+  scale_color_manual(values = AgeRange_colors) + 
+  scale_fill_manual(values = AgeRange_colors) + 
+  labs(y = "Effective Number of ASVs") + 
+  theme_bw() + 
+  theme(legend.position = "bottom",
+        axis.title.x = element_blank(),
+        axis.text.x = element_text(angle = 30,
+                                   hjust = 1, 
+                                   vjust = 1))
+```
+
+#### Statistically test Richness
+
+```{r age-diversity-richness, fig.height=4, fig.width=4}
+# Pull out richness data 
+obs_rich_df <- 
+  obs_div_df %>%
+  dplyr::filter(Order.q == 0)
+
+# Calculate the Kruskal-Wallis bc data is not normal
+kruskal_age_rich <- 
+  obs_rich_df %>%
+  kruskal_test(qD ~ AgeRange)
+
+# Look at it 
+kruskal_age_rich
+summary(kruskal_age_rich)
+
+# post-hoc test with Dunn's Test
+dunn_age_richness <- 
+  obs_rich_df %>%
+  dunn_test(qD ~ AgeRange, p.adjust.method = "fdr") %>%
+  add_xy_position(x = "AgeRange")
+
+# look at the pairwise
+dunn_age_richness
+
+# Richness by Age Group 
+AgeGroup_ggboxplot <- 
+  ggboxplot(obs_rich_df, x = "AgeRange", y = "qD", 
+          color = "AgeRange", fill = "AgeRange", alpha = 0.3,
+          outlier.shape = NA) + 
+  # Add points
+  geom_jitter(aes(color = AgeRange)) + 
+  scale_color_manual(values = AgeRange_colors) + 
+  scale_fill_manual(values = AgeRange_colors) + 
+  labs(y = "# Total ASVs (Richness)") + 
+  # Now, let's add the KW results 
+  stat_pvalue_manual(dunn_age_richness, hide.ns = TRUE,
+                      tip.length = 0, step.increase = 0.01) +
+  labs(subtitle = get_test_label(kruskal_age_rich, detailed = TRUE),
+       caption = get_pwc_label(dunn_age_richness)) + 
+  theme_bw() + 
+  theme(legend.position = "none",
+        axis.title.x = element_blank(),
+        axis.text.x = element_text(angle = 30,
+                                   hjust = 1, 
+                                   vjust = 1))
+
+```
+
+### Simpson
+
+```{r age-diversity-simpson, fig.height=4, fig.width=4}
+# Pull out simpson data 
+obs_simps_df <- 
+  obs_div_df %>%
+  dplyr::filter(Order.q == 2)
+
+# Calculate the Kruskal-Wallis
+kruskal_age_simps <- 
+  obs_simps_df %>%
+  kruskal_test(qD ~ AgeRange)
+
+# Look at it 
+kruskal_age_simps
+
+# post-hoc test with Dunn's Test
+dunn_age_simps <- 
+  obs_simps_df %>%
+  dunn_test(qD ~ AgeRange, p.adjust.method = "fdr") %>%
+  add_xy_position(x = "AgeRange")
+
+# look at the pairwise
+dunn_age_simps
+
+# Simpson by Age Group 
+simps_ggboxplot <- 
+  ggboxplot(obs_simps_df, x = "AgeRange", y = "qD", 
+          color = "AgeRange", fill = "AgeRange", alpha = 0.3,
+          outlier.shape = NA) + 
+  # Add points
+  geom_jitter(aes(color = AgeRange)) + 
+  scale_color_manual(values = AgeRange_colors) + 
+  scale_fill_manual(values = AgeRange_colors) + 
+  labs(y = "# Dominant ASVs (Simpson)") + 
+  # Now, let's add the KW results 
+  stat_pvalue_manual(dunn_age_simps, hide.ns = TRUE,
+                      tip.length = 0, step.increase = 0.01) +
+  labs(subtitle = get_test_label(kruskal_age_simps, detailed = TRUE),
+       caption = get_pwc_label(dunn_age_simps)) + 
+  theme_bw() + 
+  theme(legend.position = "none",
+        axis.title.x = element_blank(),
+        axis.text.x = element_text(angle = 30,
+                                   hjust = 1, 
+                                   vjust = 1))
+```
+
+### Shannon
+
+```{r age-diversity-shannon, fig.height=4, fig.width=12}
+# Pull out simpson data 
+obs_shan_df <- 
+  obs_div_df %>%
+  dplyr::filter(Order.q == 1)
+
+# Calculate the Kruskal-Wallis
+kruskal_age_shan <- 
+  obs_shan_df %>%
+  kruskal_test(qD ~ AgeRange)
+
+# Look at it 
+kruskal_age_shan
+
+# post-hoc test with Dunn's Test
+dunn_age_shan <- 
+  obs_shan_df %>%
+  dunn_test(qD ~ AgeRange, p.adjust.method = "fdr") %>%
+  add_xy_position(x = "AgeRange")
+
+# look at the pairwise
+dunn_age_shan
+
+# Simpson by Age Group 
+shan_ggboxplot <- 
+  ggboxplot(obs_simps_df, x = "AgeRange", y = "qD", 
+          color = "AgeRange", fill = "AgeRange", alpha = 0.3,
+          outlier.shape = NA) + 
+  # Add points
+  geom_jitter(aes(color = AgeRange)) + 
+  scale_color_manual(values = AgeRange_colors) + 
+  scale_fill_manual(values = AgeRange_colors) + 
+  labs(y = "# Common ASVs (Shannon)") + 
+  # Now, let's add the KW results 
+  stat_pvalue_manual(dunn_age_shan, hide.ns = TRUE,
+                      tip.length = 0, step.increase = 0.01) +
+  labs(subtitle = get_test_label(kruskal_age_shan, detailed = TRUE),
+       caption = get_pwc_label(dunn_age_shan)) + 
+  theme_bw() + 
+  theme(legend.position = "none",
+        axis.title.x = element_blank(),
+        axis.text.x = element_text(angle = 30,
+                                   hjust = 1, 
+                                   vjust = 1))
+
+# Show the plot
+AgeGroup_ggboxplot + shan_ggboxplot + simps_ggboxplot
+```
+
+Interpretation 2: It looks like ASVs (all, common, and dominant) do not differ between Loggerhead sea turtles of different age groups (junevile, sub-adult, and adult). 
+
+Interpretation 3: I used a Kruskal-Wallis statistal test followed by Dunn's test because my data is not normal. 
+
+# Continuous Relationships - Weight vs Biodiversity
+
+## Spearman vs. Linear Model: What’s the Difference?
+
+| Feature                  | **Spearman Correlation**                           | **Linear Model (`lm()`)**                               |
+|--------------------------|----------------------------------------------------|----------------------------------------------------------|
+| **Type of Relationship** | Monotonic (increasing or decreasing)              | Linear (straight-line relationship)                      |
+| **Assumptions**          | Non-parametric (no distribution assumptions)      | Parametric (normality, linearity, homoscedasticity)      |
+| **Input Data**           | Ordinal, ranked, or continuous                    | Continuous (can include categorical predictors too)      |
+| **What it Measures**     | Strength and direction of monotonic relationship  | Effect size, direction, significance of predictors        |
+| **Output**               | Correlation coefficient (ρ) and p-value           | Intercept, slope(s), p-values, R², residuals, etc.       |
+| **Resistant to Outliers?** | More robust                                     | Sensitive to outliers                                    |
+| **Function in R**        | `cor.test(x, y, method = "spearman")`             | `lm(y ~ x)`                                              |
+
+## Continuous Variable—Weight (kg)
+
+  - *Juvenile* turtles had a median weight of 8 kg
+  - *Subadult* turtles had a median weight of 31.6 kg
+  - *Adult* turtles had a median weight of 50.8 kg
+
+```{r plot-div-weight-lm, fig.width=7, fig.height=3.5}
+# How does biodiversity change over age group?
+obs_div_df %>%
+  ggplot(aes(x = Weight, y = qD)) + 
+  facet_wrap(.~Order.q, scales = "free") + 
+  geom_point(aes(color = AgeRange)) + 
+  scale_color_manual(values = AgeRange_colors) + 
+  labs(x = "Weight (kg)", y = "Effective Number of ASVs") +
+  geom_smooth(method = "lm") +
+  theme_bw() + 
+  theme(legend.position = "bottom",
+        legend.title = element_blank())
+```
+ 
+ ### Explore Richness More
+
+```{r richness-vs-weight}
+# Make a richness data frame
+richness_df <- 
+  obs_div_df %>%
+  dplyr::filter(Order.q == 0)
+
+# Actually run the linear model
+rich_vs_weight_lm <- 
+  lm(qD ~ Weight, data = richness_df)
+
+# Show me the model results
+rich_vs_weight_lm
+
+# Type?
+class(rich_vs_weight_lm)
+
+# Summary of lm
+summary(rich_vs_weight_lm)
+```
+
+In the output:
+
+- **Coefficients** refer to the 𝛽’s
+- **Estimate** is the estimate of each coefficient
+- **Std. Error** is the standard error of the estimate
+- **t value** is the coefficient divided by its standard error
+- **Pr(>|t|)** is the p-value for the coefficient
+- The **residual standard error** is the estimate of the variance of 𝜖
+- **Degrees of freedom** is the sample size minus # of coefficients estimated
+- **R-squared** is (roughly) the proportion of variance in the outcome explained by the model, instead we should always report the **adjusted R-squared**, which takes into penalizes the addition of unnecessary predictors, which provides a more accurate measure of model fit.
+    - Note that the R-squared value will always increase/stay the same when you add more predictors, even if they are not relevant!
+- The **F-statistic** compares the fit of the model as a whole to the null model (with no covariates)
+    - When comparing models, we always want to take the model with the higher F-statistic because it indicates a stronger relationship between the predictor varaibles and the dependent variables, suggesting that the model is better. 
+
+```{r plot-richness-weight, fig.height=4, fig.width=4, warning = FALSE}
+richness_df %>% 
+  ggplot(aes(x = Weight, y = qD)) + 
+  geom_point(aes(color = AgeRange)) + 
+  stat_smooth(method = "lm") + 
+  labs(x = "Weight (kg)", y = "# of ASVs") + 
+  scale_color_manual(values = AgeRange_colors) + 
+  theme_bw() + 
+  theme(legend.position = "bottom",
+        legend.title = element_blank()) + 
+  geom_label(aes(x = 30, y = 1100), hjust = 0, 
+             label = paste("Adj R2 = ",signif(summary(rich_vs_weight_lm)$adj.r.squared, 2),
+                           "\nIntercept =",signif(rich_vs_weight_lm$coef[[1]],3),
+                           " \nSlope =",signif(rich_vs_weight_lm$coef[[2]], 2),
+                           " \nP =",signif(summary(rich_vs_weight_lm)$coef[2,4], 2)))
+```
+
+## Spearman Correlation
+
+
+```{r rich-vs-weight-spearman, fig.width=4, fig.height=4}
+rich_weight_plot <-
+  richness_df %>% 
+  ggplot(aes(x = Weight, y = qD)) + 
+  geom_point(aes(color = AgeRange)) + 
+  stat_smooth(method = "lm") + 
+  labs(x = "Weight (kg)", y = "# of Total ASVs (Richness)") + 
+  scale_color_manual(values = AgeRange_colors) + 
+  theme_bw() + 
+  theme(legend.position = "bottom",
+        legend.title = element_blank()) + 
+  stat_cor(method = "spearman", label.x = 3, label.y = 1000)  # customize label position
+```
+
+```{r simps-vs-weight-spearman, fig.width=4, fig.height=4}
+simps_df <- 
+  obs_div_df %>%
+  dplyr::filter(Order.q == 2)
+
+simps_weight_plot <-
+  simps_df %>% 
+  ggplot(aes(x = Weight, y = qD)) + 
+  geom_point(aes(color = AgeRange)) + 
+  stat_smooth(method = "lm") + 
+  labs(x = "Weight (kg)", y = "# of Dominant ASVs (Simpson)") + 
+  scale_color_manual(values = AgeRange_colors) + 
+  theme_bw() + 
+  theme(legend.position = "bottom",
+        legend.title = element_blank()) + 
+  stat_cor(method = "spearman", label.x = 10, label.y = 60)  # customize label position
+```
+
+```{r shan-vs-weight-spearman, fig.width=12, fig.height=4}
+shan_df <- 
+  obs_div_df %>%
+  dplyr::filter(Order.q == 1)
+
+shan_weight_plot <-
+  shan_df %>% 
+  ggplot(aes(x = Weight, y = qD)) + 
+  geom_point(aes(color = AgeRange)) + 
+  stat_smooth(method = "lm") + 
+  labs(x = "Weight (kg)", y = "# of Common ASVs (Shannon)") + 
+  scale_color_manual(values = AgeRange_colors) + 
+  theme_bw() + 
+  theme(legend.position = "bottom",
+        legend.title = element_blank()) + 
+  stat_cor(method = "spearman", label.x = 3, label.y = 150)  # customize label position
+
+#Plot!
+rich_weight_plot + shan_weight_plot + simps_weight_plot
+
+```
+
+Null: There is no correlation between the variables
+ - Rho slightly less than 0: Weak negative correlation.
+ - p-value > 0.05: no significant correlation.
+ 
+ Interpretation 4: It looks like ASVs (all, common, and dominant) do not differ between Loggerhead sea turtles of different weights. 
+ 
+ Interpretation 5: I used Spearman correlations to test my data because my data is not normal. 
+ 
+ # Final info for Reproducibility 
+
+## Check Render Time
+```{r stop-time}
+# Take the time now that we are at the end of the script
+end_time <- Sys.time()
+end_time 
+
+# Echo the elapsed time
+elapsed_time <- round((end_time - start_time), 3)
+elapsed_time
+```
+
+## Session Information
+
+```{r session-info}
+# Ensure reproducibility with package version information
+devtools::session_info()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
