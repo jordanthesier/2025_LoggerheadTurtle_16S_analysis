@@ -84,13 +84,29 @@ midpoint_rooted_physeq
 
 # Intuition check on seq depth
 min(sample_sums(midpoint_rooted_physeq))
+```
 
-# Create metadata dataframe
-metadata_df <-
+# Remove outlier sample
+The minimum sequencing depth for the samples is 1,607 reads, then the next lowest is 17,372 reads. I want to remove this smallest one (16S0119C, sub-adult, cloacal) since this is a 15,765 read difference, and including this sample cut the number of ASVs in half (in a previously version of this analysis).
+
+```{r remove-outlier}
+midpoint_rooted_physeq <- 
+  midpoint_rooted_physeq %>%
+  subset_samples(names != "16S0119C") %>%
+  # And remove any ASVs unique to this sample, just in case.
+  prune_taxa(taxa_sums(.) > 0, .)
+
+# Check that we now have 43 samples 
+midpoint_rooted_physeq
+
+# Create Metadata_df 
+metadata_df <- 
   midpoint_rooted_physeq %>%
   sample_data() %>%
   data.frame()
+
 ```
+
 
 # Normalizing the Read Depth 
 
@@ -138,14 +154,20 @@ rawSeq_vs_numASV_plot <-
 
 # is it significant? 
 summary(lm(TotalSeqs ~ num_ASVs, data = raw_TotalSeqsASVs_df))
-# p value very small, significant relationship
+# p value is very small, there is a significant relationship
 
 # Put the two plots together.
 rawSeq_histogram + rawSeq_vs_numASV_plot +
   plot_annotation(tag_levels = "A")
 ```
 
-Interpretation 2: I scaled the read counts to 600,000 because the max number of reads in a sample is 569992. I cannot perform a beta-diversity analysis yet, I must scale my reads to accurately compare the data.
+Interpretation 2: I scaled the read counts to 600,000 because the max number of reads in a sample is 569992. I cannot perform a beta-diversity analysis yet, I must scale my reads to accurately compare the data, since right now there is a significant relationship between the number of reads and ASVs.
+
+Scaling reads creates a range in sequencing depth, while rarefaction does not.
+
+  - But scaling is not super computationally intensive! 
+  - The range is due to rounding.
+  - min sequence depth * # ASVs in sample/ # sequences in sample
 
 # 3. Scale Read Counts 
 
@@ -159,6 +181,9 @@ scaled_physeq <-
 
 # Look at it 
 scaled_physeq
+
+# compare to original - removing the outlier helped a lot, now we only lost ~500 ASVs instead of ~6,000 when we kept it
+midpoint_rooted_physeq
 
 # Look at it more!
 #View(data.frame(otu_table(midpoint_rooted_physeq)))
@@ -183,7 +208,7 @@ scaledSeq_histogram <-
   ggplot(aes(x = TotalSeqs)) + 
   geom_histogram(bins = 50) + 
   labs(title = "Scaled Seq Depth Histogram") + 
-  scale_x_continuous(limits = c(0, 2000)) + 
+  scale_x_continuous(limits = c(0, 20000)) + 
   theme_bw()
 
 # Scaling always gives us a range! 
@@ -191,12 +216,16 @@ scaledSeq_histogram <-
 min(scaled_TotalSeqs_df$TotalSeqs) 
 # Total Range 
 range(scaled_TotalSeqs_df)
-# How many is that range? 
+# How many is that range? 81
 range_seqs <- (max(scaled_TotalSeqs_df$TotalSeqs) - min(scaled_TotalSeqs_df$TotalSeqs))
 range_seqs
-# And in terms of percent? 
+# And in terms of percent? 0.5%
 range_seqs/max(scaled_TotalSeqs_df$TotalSeqs)
 #View(scaled_TotalSeqs_df)
+
+# is it significant? 
+summary(lm(TotalSeqs ~ num_ASVs, data = scaled_TotalSeqsASVs_df))
+# p value now > 0.05, there is no significant relationship
 
 # Set the axis min and max for the next plot 
 max_y <- max(scaled_TotalSeqs_df$TotalSeqs) + 10
@@ -208,7 +237,7 @@ scaledSeq_vs_numASV_plot <-
   ggplot(aes(x = num_ASVs, y = TotalSeqs)) + 
   geom_point() + 
   scale_y_continuous(limits = c(min_y, max_y)) +
-  #geom_smooth(method = "lm") + 
+  geom_smooth(method = "lm") + 
   theme_bw() + 
   labs(title = "Scaled: Seq Depth vs # ASVs")
 
@@ -217,7 +246,7 @@ scaledSeq_histogram + scaledSeq_vs_numASV_plot +
   plot_annotation(tag_levels = "A")
 ```
 
-Interpretation 3: I scaled the read counts to 2000 because after scaling the sequencing depth ranged from 1517 to 1607 across samples. I think this could be sufficient to perform a beta-diversity analysis and compare my data; however, the minimum sequencing depth is 1,607 reads, then the next lowest is 17,372 reads. I am tempted to remove this smallest one (16S0119C) since this is a 15,765 read difference.
+Interpretation 3: I scaled the read counts to 20000 because after scaling the sequencing depth ranged from 17323 to 17404 across samples. This is a range of 81, which is only 0.5%. Additionally, the number of ASVs no longer rely on the numbers of sequences (p > 0.05), so this data should be sufficient to perform a beta-diversity analysis.
 
 ## Similarity versus Dissimilarity
 
@@ -355,14 +384,14 @@ So, as it applies to the Sorensen Dissimilarity, we can already draw a few concl
 
 1. **SampleSite** is the strongest factor, explaining ~`r round(sorensen_AgeRange_adonis_terms1$R2[2]*100, digits = 0)`% of the variation in microbial community composition, which is statistically significant based on the p-value of <`r sorensen_AgeRange_adonis_terms1$"Pr(>F)"[2]`. This suggests sample site plays a major role in structuring the turtle microbial community.
 2. **AgeRange** is also contributing significantly (~`r round(sorensen_AgeRange_adonis_terms1$R2[1]*100, digits = 0)`% of variation, with a significant p-value of <`r sorensen_AgeRange_adonis_terms1$"Pr(>F)"[1]`). This suggests age also plays a major role in structuring the turtle microbial community.
-3.	The **interaction between AgeRange and SampleSite** explains an additional ~`r round(sorensen_AgeRange_adonis_terms1$R2[3]*100, digits = 0)`% of the variation, with a pvalue of <`r sorensen_AgeRange_adonis_terms1$"Pr(>F)"[3]`, meaning the effect of SampleSite does not vary across turtle age.
-4. Finally, the total residiuals of the model is ~`r round(sorensen_AgeRange_adonis_terms1$R2[4]*100, digits = 0)`% of the variation remains unexplained by these variables, which is a lot.
+3.	The **interaction between AgeRange and SampleSite** explains an additional ~`r round(sorensen_AgeRange_adonis_terms1$R2[3]*100, digits = 0)`% of the variation, with a p-value of `r sorensen_AgeRange_adonis_terms1$"Pr(>F)"[3]`, meaning this interaction is not significantly impacting microbial community structure. However, more variation is explained by the interaction between AgeRange and SampleSite (8%) than AgeRange alone (7%), but AgeRange alone separates groups more than this interaction (F-stat of 1.7 vs 0.9).
+4. Finally, the total residiuals of the model is ~`r round(sorensen_AgeRange_adonis_terms1$R2[4]*100, digits = 0)`% of the variation remains unexplained by these variables, which is quite a lot.
 
 #### Biological takeaway:
 
-AgeRange and SampleSite shape microbial beta diversity in this dataset based off of shared presence/absence of ASVs as it relates to the Sorensen dissimilarity. The null interaction effect suggests that spatial dynamics (*e.g.,* sample site) is homogeneous across the turtle microbiomes
+AgeRange and SampleSite shape microbial beta diversity in this dataset based off of shared presence/absence of ASVs as it relates to the Sorensen dissimilarity. The null interaction effect suggests that spatial dynamics (*e.g.,* sample site) is homogeneous across the turtle microbiomes of different ages.
 
-**Therefore, we will need to explore the role that abundance plays in shaping microbial community composition using the Bray-Curtis Dissimilarity.**
+**We will also explore the role that abundance plays in shaping microbial community composition using the Bray-Curtis Dissimilarity.**
 
 ### PERMANOVA: Continuous variable with Weight 
 
@@ -376,14 +405,13 @@ sorensen_weight_adonis_terms2 <- adonis2(scaled_sorensen_dist ~ Weight * AgeRang
 sorensen_weight_adonis_terms2
 ```
 
-**In the first model** where `Weight` is the final term, `Weight` explains only 2.8% of the variation in community composition after accounting for AgeRange and SampleSite. It is NOT statistically significant (p > 0.05), so `Weight` does not have an independent effect. *But in this model, weight is tested after AgeRange and SampleSite, so its effect is adjusted for their contributions.*
+**In the first model** where `Weight` is the final term, `Weight` explains only 3% of the variation in community composition after accounting for AgeRange and SampleSite. It is statistically significant (p < 0.030), so `Weight` has an independent effect. *But in this model, weight is tested after AgeRange and SampleSite, so its effect is adjusted for their contributions.*
 
-**In the second model** `Weight` now explains 4.6% of the variation, which is a bit higher! Here `Weight` is significant, indicating a strong association between turtle weight and community structure. However, weight is tested first, so it “gets credit” for shared variance with station and also date. 
+**In the second model** `Weight` now explains 4.7% of the variation, which is a bit higher! Here `Weight` is also significant (P < 0.001), indicating a strong association between turtle weight and community structure. However, weight is tested first, so it “gets credit” for shared variance with station and also date. 
 
 These two models together show that: 
 
-1. Weight is not important (not significant in both models).
-2. AgeRange and SampleSite are important (significant in both models).
+1. Weight is important (significant in both models).
 3. Weight likely co-varies with AgeRange, which makes sense as turtles grow when they become older.
 4. When interpreting effect size, contextualize the model structure:
     a. *Model 1:* Weight’s unique contribution
@@ -414,19 +442,18 @@ So, as it applies to the Sorensen Dissimilarity, we can already draw a few concl
 
 1. **SampleSite** is the strongest factor, explaining ~`r round(bray_AgeRange_adonis_terms1$R2[2]*100, digits = 0)`% of the variation in microbial community composition, which is statistically significant based on the p-value of <`r bray_AgeRange_adonis_terms1$"Pr(>F)"[2]`. This suggests sample site plays a major role in structuring the turtle microbial community.
 2. **AgeRange** is also contributing significantly (~`r round(bray_AgeRange_adonis_terms1$R2[1]*100, digits = 0)`% of variation, with a significant p-value of <`r bray_AgeRange_adonis_terms1$"Pr(>F)"[1]`). This suggests age also plays a major role in structuring the turtle microbial community.
-3.	The **interaction between AgeRange and SampleSite** explains an additional ~`r round(bray_AgeRange_adonis_terms1$R2[3]*100, digits = 0)`% of the variation, with a pvalue of <`r bray_AgeRange_adonis_terms1$"Pr(>F)"[3]`, meaning the effect of SampleSite does not vary across turtle ages.
-4. Finally, the total residiuals of the model is ~`r round(bray_AgeRange_adonis_terms1$R2[4]*100, digits = 0)`% of the variation remains unexplained by these variables, which is a lot.
+3.	The **interaction between AgeRange and SampleSite** explains an additional ~`r round(bray_AgeRange_adonis_terms1$R2[3]*100, digits = 0)`% of the variation, with a pvalue of <`r bray_AgeRange_adonis_terms1$"Pr(>F)"[3]`, meaning this interaction is not significantly impacting microbial community structure. However, more variation is explained by the interaction between AgeRange and SampleSite (9%) than AgeRange alone (6%), but AgeRange alone separates groups more than this interaction (F-stat of 1.3 vs 1.1).
+4. Finally, the total residiuals of the model is ~`r round(bray_AgeRange_adonis_terms1$R2[4]*100, digits = 0)`% of the variation remains unexplained by these variables, which is quite a lot.
 
 ### Comparing Sorensen & Bray Curtis Results 
 
 - Both models revealed AgeRange and SampleSite significantly effect microbial community structure, without significant interactions.
-- The Sorensen model explains ~2% more total variation, suggesting that presence/absence captures more ecological structure (barely).
-- The higher R^2^ for AgeRange (~`r round(sorensen_AgeRange_adonis_terms1$R2[1]*100, digits = 0)`% vs. ~`r round(bray_AgeRange_adonis_terms1$R2[1]*100, digits = 0)`%) and SampleSite (~`r round(sorensen_AgeRange_adonis_terms1$R2[2]*100, digits = 0)`% vs. ~`r round(bray_AgeRange_adonis_terms1$R2[2]*100, digits = 0)`%) in Sorensen indicates that abundance shifts across space are not more pronounced than presence/absence alone suggests.
-- Residual variation is lower in Sorensen, further supporting its added sensitivity to ecologically meaningful abundance patterns.
+- Both models explain the same amount of total variation, suggesting presence/absence and abundance capture similar ecological structure.
+- The higher R^2^ (~`r round(sorensen_AgeRange_adonis_terms1$R2[1]*100, digits = 0)`% vs. ~`r round(bray_AgeRange_adonis_terms1$R2[1]*100, digits = 0)`%) and F-stat (~`r round(sorensen_AgeRange_adonis_terms1$F[1], digits = 0)` vs. ~`r round(bray_AgeRange_adonis_terms1$F[1], digits = 0)`) for AgeRange but not SampleSite (~`r round(sorensen_AgeRange_adonis_terms1$R2[2]*100, digits = 0)`% vs. ~`r round(bray_AgeRange_adonis_terms1$R2[2]*100, digits = 0)`% and ~`r round(sorensen_AgeRange_adonis_terms1$F[2], digits = 0)` vs. ~`r round(bray_AgeRange_adonis_terms1$F[2], digits = 0)`) in Sorensen indicates that rare species across turtle ages may be playing a bigger role than rare species across sample sites.
 
 *In other words:* 
 
-Community composition is strongly influenced by AgeRange and SampleSite in both models, but the Sorensen model (presence/absence) explains more variation overall — especially for spatial effects. This suggests that rare species play a major role in structuring microbial communities in this system across age ranges and sample sites. 
+Community composition is strongly influenced by AgeRange and SampleSite in both models, but the Sorensen model (presence/absence) reveals more separation of groups by age. This suggests that rare species play a major role in structuring microbial communities in this system across age ranges. 
 
 ### PERMANOVA: Continuous variable with Weight
 
@@ -440,14 +467,14 @@ bray_weight_adonis_terms2 <- adonis2(scaled_bray_dist ~ Weight * AgeRange * Samp
 bray_weight_adonis_terms2
 ```
 
-**In the first model** where `Weight` is the final term, `Weight` explains only 2.7% of the variation in community composition after accounting for AgeRange and SampleSite, which was similar to the Sorensen results. Here, it IS statistically significant (p < 0.05), so `Weight` does have an independent effect. *But in this model, Weight is tested after AgeGroup and SampleSite, so its effect is adjusted for their contributions.*
+**In the first model** where `Weight` is the final term, `Weight` explains only 2.7% of the variation in community composition after accounting for AgeRange and SampleSite, which was similar to the Sorensen results. It is also statistically significant (p < 0.041), so `Weight` does have an independent effect. *But in this model, Weight is tested after AgeGroup and SampleSite, so its effect is adjusted for their contributions.*
 
-**In the second model** `Weight` now explains 3.7% of the variation, which is slightly higher and a similar result to the Soresen PERMANOVA. `Weight` is also significant (p < 0.001), while `AgeRange` is not (p > 0.05). Here, weight is tested first, so it “gets credit” for shared variance with AGeRange and also SampleSite. 
+**In the second model** `Weight` now explains 3.8% of the variation, which is slightly higher and a similar result to the Soresen PERMANOVA. `Weight` is also significant (p < 0.001), while `AgeRange` is not (p > 0.05). Here, weight is tested first, so it “gets credit” for shared variance with AgeRange and also SampleSite. 
 
 These two models together show that: 
 
 1. Weight is important (significant in both models).
-3. When interpreting effect size, contextualize the model structure:
+2. When interpreting effect size, contextualize the model structure:
     a. *Model 1:* weight’s unique contribution
     b. *Model 2:* weight’s overall contribution, overlapping with other factors. 
 
@@ -456,13 +483,13 @@ These two models together show that:
 ### Interpretation: What Does Age Mean Across Metrics?
 
 1.	Significant across both distance types, AgeRange consistently affects community composition!
-2.	Slightly higher R^2^ in Sorensen indicates that AgeRange influences presence/absence (rare) patterns more than just abundance measured by the Bray-Curtis dissimilarity.
+2.	Slightly higher R^2^ and F-stat in Sorensen indicates that AgeRange influences presence/absence (rare) patterns more than just abundance measured by the Bray-Curtis dissimilarity.
 3.	Effect size changes depending on term order:
     - When entered first (Model 2): weight explains more variance, capturing shared effects with AgeRange.
     - When entered last (Model 1): weight explains a smaller, unique portion of variation.
 4.	In Sorensen, there’s also a significant AgeRange × Weight interaction, which is consistent with turtles growing as they age.
 
-Therefore, AgeRange is a major driver in this system! Therefore, we can accept our hypothesis at the beginning of this file. :) Age's effect is robust across distance metrics (presence/absence and abundance), with more variation explained by presence/absence. And, some of its influence may be shared with weight, so term order matters. Finally, in Sorensen, AgeRange and SampleSite affects who is present, suggesting an effect on rare species. 
+Therefore, AgeRange is a major driver in this system and, we can accept our hypothesis at the beginning of this file!! :) Age's effect is robust across distance metrics (presence/absence and abundance), with more variation and separation explained by presence/absence. And, some of its influence may be shared with weight, so term order matters. Finally, in Sorensen, AgeRange affects who is present, suggesting an effect of rare species. 
 
 *HOWEVER, there are caveats to these conclusions... let's take a look at variance!*
 
@@ -506,11 +533,11 @@ Interpreting `betadisper()/permutest()` results (Interpretation 6):
 
 **Sorensen:**
 
-- **AgeRange** does not have a significant `betadisper()/permutest()` result. Therefore, the PERMANOVA results likely represent a true difference by age.
--  **SampleSite** does not have a significant `betadisper()/permutest()` result. Therefore, the PERMANOVA results likely represent a true difference by sample site.  
-- **Weight** has a significant `betadisper()/permutest()` result. We cannot conclude for certain that our PERMANOVA results are truly because of weight.
+- **AgeRange** does not have a significant `betadisper()/permutest()` result (p > 0.05). Therefore, the PERMANOVA results likely represent a true difference by age.
+-  **SampleSite** does not have a significant `betadisper()/permutest()` result (p > 0.05). Therefore, the PERMANOVA results likely represent a true difference by sample site.  
+- **Weight** has a significant `betadisper()/permutest()` result (p < 0.002). We cannot conclude for certain that our PERMANOVA results are truly because of weight.
 
-Interpretation 7: AgeRange and SampleSite are major drivers in this system! We can still accept our hypothesis at the beginning of this file! Age's effect is robust across distance metrics (presence/absence and abundance), with more variation explained by presence/absence. Finally, in Sorensen, AgeRange and SampleSite affects who is present, suggesting an effect on rare species.
+Interpretation 7: AgeRange and SampleSite are major drivers in this system! We can still accept our hypothesis at the beginning of this file! Age's effect is robust across distance metrics (presence/absence and abundance), with more variation and separation explained by presence/absence. Finally, in Sorensen, AgeRange affects who is present, suggesting an effect of rare species.
 
 ## Bray-Curtis
 
@@ -680,7 +707,7 @@ We can conclude that (Interpretation 8):
 
 1. SampleSite is a dominant factor structuring microbial communities (Tank Water samples are separate from Cloacal and Oral).
 2. AgeRange may be contributing in Sorensen, as most Juveniles are toward the extremes in Axis 1.
-3. Sorensen highlights both spatial patterns more strongly because between the two axes more variation is explained (~20%) than Sorensen (~15%), suggesting that presence/absence differences among taxa matter in this system. We gain ~5% of more variation explained in the data in 2 axes without incorporating abundances.
+3. Sorensen highlights spatial patterns more strongly because between the two axes more variation is explained (~20%) than Bray-Curtis (~15%), suggesting that presence/absence differences among taxa matter in this system. We gain ~5% of more variation explained in the data in 2 axes without incorporating abundances.
 4. Can there be some other more important factor?
 
 ## 6b. NMDS: Non-Metric Multidimensional Scaling 
@@ -751,7 +778,7 @@ Above are two NMDS plots showing differences in microbial community composition 
 
 We can conclude that (Interpretation 9): 
 
-1. The stress value for Sorensen is ~0.20 and for Bray-Curtis is ~0.22, which is too high for a strong result.
+1. The stress value for Sorensen is ~0.20 and for Bray-Curtis is ~0.21, which are both too high for a strong result.
 2. Both Sorensen and Bray-Curtis look similar.
 3. SampleSite seems to be a dominant factor structuring microbial communities (Tank Water samples are separate from Cloacal and Oral).
 4. AgeRange doesn't look to be contributing significantly.
@@ -766,7 +793,15 @@ sorensen_nmds_plot + bray_nmds_plot +
   plot_annotation(tag_levels = "A")
 ```
 
-Interpretation 10: I think PCoA works best because the stress value for NMDS is too high. Additionally, the Sorensen PCoA is the only plot you could argue has some AgeRange differentiation. 
+Interpretation 10: I think PCoA works best because the stress values for NMDS are too high. Additionally, the Sorensen PCoA is the only plot you could argue has some AgeRange differentiation. 
+
+# Save data
+
+```{r save-data}
+save(scaled_physeq, 
+     file = "data/06_Ordination/scaled_physeq.RData")
+```
+
 
 # Final info for Reproducibility 
 
