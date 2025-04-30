@@ -520,6 +520,9 @@ dispr_sorensen_AgeRange <- betadisper(scaled_sorensen_dist, metadata_df$AgeRange
 # permutest() performs a non-parametric permutation test, which is robust and valid for the kind of data used in beta diversity analysis (e.g., dissimilarity matrices).
 permutest(dispr_sorensen_AgeRange)
 
+TukeyHSD(dispr_sorensen_AgeRange)
+
+
 # Sorensen Betadisper - SampleSite  
 dispr_sorensen_SampleSite <- betadisper(scaled_sorensen_dist, metadata_df$SampleSite)
 permutest(dispr_sorensen_SampleSite)

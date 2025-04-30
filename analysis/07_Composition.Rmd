@@ -1,0 +1,897 @@
+---
+title: "Microbial Composition Analysis Among Turtle Age Groups"
+author: "Jordan"
+date: "2025-04-16"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.path = "../figures/07_Composition/")
+```
+
+# Goals
+
+In this file, we will perform compositional analysis of our scaled/noramlized/rarefied microbial dataset! 
+
+1. Load in scaled/normalized phyloseq object. 
+2. Calculate the relative abundances of taxonomic groups at various levels: 
+    A. Phylum
+    B. Genus
+    C. ASV 
+3. Plot them, and narrow in on specific taxnomic group of interest
+  
+## Inputs 
+
+1. We will need the `scaled_physeq.RData`, which includes a rooted tree that we created in `analysis/06_Ordination/scaled_physeq.RData`. 
+  
+## Outputs 
+  
+1. Beautiful visualizations of microbial taxa and how they vary across parameters related to our study: station (categorical) and salinity (continuous).
+2. Run some stats! 
+
+# Compositional Data 
+
+Microbial abundance data—like 16S rRNA gene or metagenomics data—are typically **compositional:** they represent relative abundances constrained to a constant total (*e.g.,* percent or proportions). This introduces spurious correlations and other issues if analyzed with traditional statistics. This is a very important limitation to microbial data! 
+
+Interpretation 1: Interpreting microbial abundance from relative (aka. compositional) rather than absolute counts does not allow data to be compared between studies. Additionally, since all abundances are relative, when one abundance increases another one must decrease, even if the absolute abundance did not actually change. This can introduce false positives. 
+
+# Load Packages
+
+```{r load-packages}
+pacman::p_load(tidyverse, devtools, DT, phyloseq, patchwork, install = FALSE)
+
+# load colors
+source("code/colors.R")
+
+```
+
+
+# 1. Load Data
+
+The following phyloseq object contains microbial community composition data in a standardized format. In this case, we’ve already normalized the reads (scaled to 17,323 per sample), which is essential for comparing relative abundances.
+
+
+```{r load-data}
+#load physeq
+load("data/06_Ordination/scaled_physeq.RData")
+
+# look at the data
+scaled_physeq
+
+# Intuition check - scaled at 17,323
+min(sample_sums(scaled_physeq))
+range(sample_sums(scaled_physeq))
+```
+
+# Taxonomic Analysis !
+
+In this analysis, we will drill down from phylum to ASV level analyses, which will enable increasingly detailed insights into microbial diversity and potential ecological roles. However, it is also important for us to remember that deeper levels also come with increased noise and data sparsity, especially for rare groups. 
+
+## Phylum
+
+Taxonomic analysis often begins at broader levels (*e.g.,* Phylum) to visualize overarching trends before zooming in on finer-scale patterns. This step allows us to identify which microbial groups dominate across samples and which may respond to environmental gradients like salinity.
+
+Now, let's calculate the relative abundance of the phyla across all the samples. **NOTE:** To do this, it is imperative that we have scaled the data to a constant sequencing depth. 
+
+```{r calc-phylum-df}
+#Create a phylum level datafram
+phylum_df <-
+  scaled_physeq %>%
+  # Agglomerate all ASV counts within a phylum
+  tax_glom(taxrank = "Phylum") %>% # We have 31 Phyla
+  # Calculate relative abundance !
+  transform_sample_counts(function(x) {x/sum(x)}) %>%
+  #create df from phyloseq object
+  psmelt() %>%
+  # Filter out phyla < 1%
+  dplyr::filter(Abundance > 0.01) %>%
+  # fix the order of age sample site
+  mutate(SampleSite = fct_relevel(SampleSite, c("CLOACA", "ORAL", "TANK WATER")),
+         AgeRange = fct_relevel(AgeRange, c("JUVENILE", "SUB-ADULT",
+                                          "ADULT")))
+
+## What are the phylum abundances? 
+phylum_df %>%
+  group_by(Phylum) %>%
+  summarize(mean_PercAbund = round(mean(Abundance), digits = 4)) %>%
+  arrange(-mean_PercAbund) %>%
+  datatable()
+
+# Make a list of the top phyla 
+top10_phyla <- 
+  phylum_df %>%
+  group_by(Phylum) %>%
+  summarize(mean_PercAbund = mean(Abundance)) %>%
+  arrange(-mean_PercAbund) %>%
+  head(n = 10) %>%
+  pull(Phylum)
+
+# intuition check - should be the same 
+top10_phyla
+```
+
+Interpretation 2: Pseudomonadota, Bacteroidota, and Bacillota have the highest relative abundance in my dataset. Their abundaces are 58%, 37%, and 12%, respectively.  
+
+## Stacked Bar plots 
+
+Visualization helps detect patterns in composition and abundance that statistical models may later test. Stacked bar plots are often used but can obscure individual sample variation and visualize too much data all at once. 
+
+Therefore, we will also explore faceted and jittered boxplots below the bar plots to see sample-level trends more clearly.
+
+```{r phylum-stacked-bar, fig.width=9, fig.height=3.5}
+# Stacked Bar Plot With All phyla 
+# Plot Phylum Abundances - make sure to load phylum_colors 
+phylum_df %>%
+  dplyr::filter(Phylum %in% top10_phyla) %>%
+  # Warning: It's important to have one sample per x value, 
+  # otherwise, it will take the sum between multiple samples
+  # chose one turtle for juvenile, sub-adult, and adult, but I don't think this looks right
+  dplyr::filter(TurtleName == c("MARVIN", "MARO", "SAMBA")) %>%
+  ggplot(aes(x = SampleSite, y = Abundance, fill = Phylum)) + 
+  facet_grid(.~AgeRange) + 
+  geom_bar(stat = "identity", color = "black") + 
+  labs(title = "Top 10 Phyla: Surface Samples") + 
+  scale_fill_manual(values = phylum_colors) + 
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1))
+
+#Relative abundance needs to be between 0 and 1, or else you're plotting more than one sample
+
+```
+
+```{r phylum-stacked-bar-samplesAges, fig.width=9, fig.height=4}
+# Stacked Bar Plot looking at all samples and grouping by age range
+# Plot Phylum Abundances - make sure to load phylum_colors 
+phylum_df %>%
+  dplyr::filter(Phylum %in% top10_phyla) %>%
+  ggplot(aes(x = Sample, y = Abundance, fill = Phylum)) + 
+  facet_grid(. ~ AgeRange, scales = "free_x", space = "free_x") + 
+  geom_bar(stat = "identity", color = "black") + 
+  labs(title = "Top 10 Phyla per Turtle") + 
+  scale_fill_manual(values = phylum_colors) + 
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1),
+        strip.background = element_blank(),
+        panel.spacing = unit(1, "lines"))
+
+```
+
+```{r phylum-stacked-bar-samplesSites, fig.width=9, fig.height=4}
+# Stacked Bar Plot looking at all samples and grouping by sample site 
+# Plot Phylum Abundances - make sure to load phylum_colors 
+phylum_df %>%
+  dplyr::filter(Phylum %in% top10_phyla) %>%
+  ggplot(aes(x = Sample, y = Abundance, fill = Phylum)) + 
+  facet_grid(. ~ SampleSite, scales = "free_x", space = "free_x") + 
+  geom_bar(stat = "identity", color = "black") + 
+  labs(title = "Top 10 Phyla per Turtle") + 
+  scale_fill_manual(values = phylum_colors) + 
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1),
+        strip.background = element_blank(),
+        panel.spacing = unit(1, "lines"))
+```
+
+```{r phylum-stacked-bar-samplesAgesSites, fig.width=9, fig.height=7}
+# Stacked Bar Plot looking at all samples and grouping by age AND sample site
+# Plot Phylum Abundances - make sure to load phylum_colors 
+phylum_df %>%
+  filter(Phylum %in% top10_phyla) %>%
+  ggplot(aes(x = Sample, y = Abundance, fill = Phylum)) + 
+  facet_grid(SampleSite ~ AgeRange, scales = "free_x", space = "free_x") + 
+  geom_bar(stat = "identity", color = "black") + 
+  labs(title = "Top 10 Phyla per Turtle by Sample Site and Age Range") + 
+  scale_fill_manual(values = phylum_colors) + 
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1),
+        strip.background = element_blank(),
+        panel.spacing = unit(1, "lines"))
+```
+
+## Faceted Bar plot 
+
+To help compare the phylum abundance between sample types, we can facet by phylum to better see how the changes occur across ages, which is masked in the stacked bar plot. It's a little better than the stacked bar plot, however, we can do even better! 
+
+
+```{r phylum-facet-bar, fig.width=9, fig.height=15}
+# Group by Age 
+phylum_df %>%
+  dplyr::filter(Phylum %in% top10_phyla) %>%
+  ggplot(aes(x = Sample, y = Abundance, fill = Phylum)) + 
+  facet_grid(Phylum~AgeRange, scale = "free") + 
+  # add the stacked bar 
+  geom_bar(stat = "identity", color = "black") + 
+  # change the colors to be our selected colors 
+  scale_fill_manual(values = phylum_colors) + 
+  theme_bw() + 
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1))
+
+# Group by Sample Site
+phylum_df %>%
+  dplyr::filter(Phylum %in% top10_phyla) %>%
+  ggplot(aes(x = Sample, y = Abundance, fill = Phylum)) + 
+  facet_grid(Phylum~SampleSite, scale = "free") + 
+  # add the stacked bar 
+  geom_bar(stat = "identity", color = "black") + 
+  # change the colors to be our selected colors 
+  scale_fill_manual(values = phylum_colors) + 
+  theme_bw() + 
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1))
+
+
+### Or combined together: 
+phylum_df %>%
+  dplyr::filter(Phylum %in% top10_phyla) %>%
+  ggplot(aes(x = AgeRange, y = Abundance, fill = Phylum, color = Phylum)) + 
+  facet_grid(Phylum~SampleSite, scale = "free") + 
+  # add the stacked bar 
+  geom_jitter() +
+  geom_boxplot(outlier.shape = NA, alpha = 0.5) + 
+  # change the colors to be our selected colors 
+  scale_fill_manual(values = phylum_colors) + 
+  scale_color_manual(values = phylum_colors) + 
+  theme_bw() + 
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1))
+```
+
+### All Phyla by Age:
+
+```{r plot-phylum-age, fig.width=12, fig.height=6}
+### Or combined together: 
+phylum_df %>%
+  dplyr::filter(Phylum %in% top10_phyla) %>%
+  ggplot(aes(x = AgeRange, y = Abundance, fill = Phylum, color = Phylum)) + 
+  facet_wrap(Phylum~., scales = "free", nrow = 2) + 
+  # add the stacked bar 
+  geom_jitter() +
+  geom_boxplot(outlier.shape = NA, alpha = 0.5) + 
+  # change the colors to be our selected colors 
+  scale_fill_manual(values = phylum_colors) + 
+  scale_color_manual(values = phylum_colors) + 
+  theme_bw() + 
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1))
+```
+
+### Cloaca Phyla by Age:
+
+```{r plot-phylum-ageCloaca, fig.width=12, fig.height=6}
+phylum_df %>%
+  dplyr::filter(Phylum %in% top10_phyla) %>%
+  dplyr::filter(SampleSite == "CLOACA") %>%
+  ggplot(aes(x = AgeRange, y = Abundance, fill = Phylum, color = Phylum)) + 
+  facet_wrap(Phylum~., scales = "free", nrow = 2) + 
+  # add the stacked bar 
+  geom_jitter() +
+  geom_boxplot(outlier.shape = NA, alpha = 0.5) + 
+  # change the colors to be our selected colors 
+  scale_fill_manual(values = phylum_colors) + 
+  scale_color_manual(values = phylum_colors) + 
+  theme_bw() + 
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1))
+```
+
+### Oral Phyla by Age:
+
+```{r plot-phylum-ageOral, fig.width=12, fig.height=6}
+phylum_df %>%
+  dplyr::filter(Phylum %in% top10_phyla) %>%
+  dplyr::filter(SampleSite == "ORAL") %>%
+  ggplot(aes(x = AgeRange, y = Abundance, fill = Phylum, color = Phylum)) + 
+  facet_wrap(Phylum~., scales = "free", nrow = 2) + 
+  # add the stacked bar 
+  geom_jitter() +
+  geom_boxplot(outlier.shape = NA, alpha = 0.5) + 
+  # change the colors to be our selected colors 
+  scale_fill_manual(values = phylum_colors) + 
+  scale_color_manual(values = phylum_colors) + 
+  theme_bw() + 
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1))
+```
+
+### Tank Water Phyla by Age:
+
+```{r plot-phylum-ageWater, fig.width=12, fig.height=6}
+phylum_df %>%
+  dplyr::filter(Phylum %in% top10_phyla) %>%
+  dplyr::filter(SampleSite == "TANK WATER") %>%
+  ggplot(aes(x = AgeRange, y = Abundance, fill = Phylum, color = Phylum)) + 
+  facet_wrap(Phylum~., scales = "free", nrow = 2) + 
+  # add the stacked bar 
+  geom_jitter() +
+  geom_boxplot(outlier.shape = NA, alpha = 0.5) + 
+  # change the colors to be our selected colors 
+  scale_fill_manual(values = phylum_colors) + 
+  scale_color_manual(values = phylum_colors) + 
+  theme_bw() + 
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1))
+```
+
+### Phyla by Sample Site:
+
+```{r plot-phylum-sampleSite, fig.width=12, fig.height=6}
+### Or combined together: 
+phylum_df %>%
+  dplyr::filter(Phylum %in% top10_phyla) %>%
+  ggplot(aes(x = SampleSite, y = Abundance, fill = Phylum, color = Phylum)) + 
+  facet_wrap(Phylum~., scales = "free", nrow = 2) + 
+  # add the stacked bar 
+  geom_jitter() +
+  geom_boxplot(outlier.shape = NA, alpha = 0.5) + 
+  # change the colors to be our selected colors 
+  scale_fill_manual(values = phylum_colors) + 
+  scale_color_manual(values = phylum_colors) + 
+  theme_bw() + 
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1))
+```
+
+**notes**
+- some phyla unique to adults or sub-adults? (Dependentiae, Thermodesulfobacteriota, Balneolota)
+- some phyla shared between ages (Bacteroidota, Pseudomonadota)
+- some phyla differ across ages (sub-adult Verrucomicrobiota)
+
+After initial exploration, we focus on specific phyla that appear to vary across ages. These targeted plots help develop hypotheses about ecological drivers.
+
+- Verrucomicrobiota - paper said this phyla appears more in juveniles
+- Myxococcota
+- Planctomycetota
+- Bacteroidota --> paper said juveniles had more Flavobacteriales/Tenacibaculum and adults had more Bacteriodales
+  - Tenacibaculum is marine pathogen
+
+### A1. Verrucomicrobiota 
+
+```{r phylum-verrucom, fig.width=7, fig.height=3.5}
+# Narrow in on a specific group
+# Verrucomicrobiota - y: abundance, x: age, dot plot + boxplot
+verrucom_phylum_AgeRange <- 
+  phylum_df %>%
+  dplyr::filter(Phylum == "Verrucomicrobiota") %>%
+  # build the plot 
+  ggplot(aes(x = AgeRange, y = Abundance, 
+             fill = AgeRange, color = AgeRange)) + 
+  geom_boxplot(alpha = 0.5, outlier.shape = NA) + # outliers not plotted here in boxplot 
+  geom_jitter() + 
+  theme_bw() + 
+  labs(title = "Verrucomicrobiota Phylum") + 
+  scale_color_manual(values = AgeRange_colors) + 
+  scale_fill_manual(values = AgeRange_colors) + 
+    theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1),
+          legend.position = "right")
+
+# Separate by Sample Site
+phylum_df %>%
+  filter(Phylum == "Verrucomicrobiota") %>%
+  ggplot(aes(x = AgeRange, y = Abundance, fill = AgeRange, color = AgeRange)) + 
+  geom_boxplot(alpha = 0.5, outlier.shape = NA) + 
+  geom_jitter(width = 0.2, alpha = 0.6) + 
+  facet_wrap(~ SampleSite) + 
+  #stat_compare_means(method = "kruskal.test", label = "p.format") + 
+  scale_color_manual(values = AgeRange_colors) + 
+  scale_fill_manual(values = AgeRange_colors) + 
+  labs(title = "Verrucomicrobiota Phylum by Sample Site and Age Range") + 
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1),
+        legend.position = "right")
+
+
+# Statistically: Kruskall-Wallis followed by a Tukey's Posthoc test
+# These are non-parametric (non-normal) stat tests 
+
+# CONTINUOUS 
+verrucom_phylum_weight <- 
+  phylum_df %>%
+  dplyr::filter(Phylum == "Verrucomicrobiota") %>%
+  ggplot(aes(x = Weight, y = Abundance)) + 
+  geom_point(aes(color = AgeRange)) + 
+  theme_bw() + 
+  geom_smooth(method = "lm",  formula = y ~ poly(x, 2)) + 
+  labs(title = "Verrucomicrobiota Phylum") + 
+  scale_color_manual(values = AgeRange_colors) + 
+  theme(legend.position = "none")
+
+# Collect both of the plots together into one 
+verrucom_phylum_AgeRange + verrucom_phylum_weight + 
+  plot_layout(guides = "collect") +
+  plot_annotation(tag_levels = "A")
+```
+
+Def more in juveniles when looking at Cloaca 
+Possibly more in sub-adults when looking at Oral
+
+### A2. Myxococcota 
+
+```{r phylum-myxoc, fig.width=7, fig.height=3.5}
+# Narrow in on a specific group
+# Myxococcota - y: abundance, x: age, dot plot + boxplot
+myxoc_phylum_AgeRange <- 
+  phylum_df %>%
+  dplyr::filter(Phylum == "Myxococcota") %>%
+  # build the plot 
+  ggplot(aes(x = AgeRange, y = Abundance, 
+             fill = AgeRange, color = AgeRange)) + 
+  geom_boxplot(alpha = 0.5, outlier.shape = NA) + # outliers not plotted here in boxplot 
+  geom_jitter() + 
+  theme_bw() + 
+  labs(title = "Myxococcota Phylum") + 
+  scale_color_manual(values = AgeRange_colors) + 
+  scale_fill_manual(values = AgeRange_colors) + 
+    theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1),
+          legend.position = "right")
+# Statistically: Kruskall-Wallis followed by a Tukey's Posthoc test
+# These are non-parametric (non-normal) stat tests 
+
+# Separate by Sample Site and test with KW
+phylum_df %>%
+  filter(Phylum == "Myxococcota") %>%
+  ggplot(aes(x = AgeRange, y = Abundance, fill = AgeRange, color = AgeRange)) + 
+  geom_boxplot(alpha = 0.5, outlier.shape = NA) + 
+  geom_jitter(width = 0.2, alpha = 0.6) + 
+  facet_wrap(~ SampleSite) + 
+  #stat_compare_means(method = "kruskal.test", label = "p.format") + 
+  scale_color_manual(values = AgeRange_colors) + 
+  scale_fill_manual(values = AgeRange_colors) + 
+  labs(title = "Myxococcota Phylum by Sample Site and Age Range") + 
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1),
+        legend.position = "right")
+
+# CONTINUOUS 
+myxoc_phylum_weight <- 
+  phylum_df %>%
+  dplyr::filter(Phylum == "Myxococcota") %>%
+  ggplot(aes(x = Weight, y = Abundance)) + 
+  geom_point(aes(color = AgeRange)) + 
+  theme_bw() + 
+  geom_smooth(method = "lm",  formula = y ~ poly(x, 2)) + 
+  labs(title = "Myxococcota Phylum") + 
+  scale_color_manual(values = AgeRange_colors) + 
+  theme(legend.position = "none")
+
+# Collect both of the plots together into one 
+myxoc_phylum_AgeRange + myxoc_phylum_weight + 
+  plot_layout(guides = "collect") +
+  plot_annotation(tag_levels = "A")
+```
+
+lower in sub-adults?
+
+### A3. Planctomycetota 
+
+```{r phylum-plant, fig.width=7, fig.height=3.5}
+# Narrow in on a specific group
+# Planctomycetota - y: abundance, x: age, dot plot + boxplot
+plant_phylum_AgeRange <- 
+  phylum_df %>%
+  dplyr::filter(Phylum == "Planctomycetota") %>%
+  # build the plot 
+  ggplot(aes(x = AgeRange, y = Abundance, 
+             fill = AgeRange, color = AgeRange)) + 
+  geom_boxplot(alpha = 0.5, outlier.shape = NA) + # outliers not plotted here in boxplot 
+  geom_jitter() + 
+  theme_bw() + 
+  labs(title = "Planctomycetota Phylum") + 
+  scale_color_manual(values = AgeRange_colors) + 
+  scale_fill_manual(values = AgeRange_colors) + 
+    theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1),
+          legend.position = "right")
+# Statistically: Kruskall-Wallis followed by a Tukey's Posthoc test
+# These are non-parametric (non-normal) stat tests 
+
+# Separate by Sample Site and test with KW
+phylum_df %>%
+  filter(Phylum == "Planctomycetota") %>%
+  ggplot(aes(x = AgeRange, y = Abundance, fill = AgeRange, color = AgeRange)) + 
+  geom_boxplot(alpha = 0.5, outlier.shape = NA) + 
+  geom_jitter(width = 0.2, alpha = 0.6) + 
+  facet_wrap(~ SampleSite) + 
+  #stat_compare_means(method = "kruskal.test", label = "p.format") + 
+  scale_color_manual(values = AgeRange_colors) + 
+  scale_fill_manual(values = AgeRange_colors) + 
+  labs(title = "Planctomycetota Phylum by Sample Site and Age Range") + 
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1),
+        legend.position = "right")
+
+# CONTINUOUS 
+plant_phylum_weight <- 
+  phylum_df %>%
+  dplyr::filter(Phylum == "Planctomycetota") %>%
+  ggplot(aes(x = Weight, y = Abundance)) + 
+  geom_point(aes(color = AgeRange)) + 
+  theme_bw() + 
+  geom_smooth(method = "lm",  formula = y ~ poly(x, 2)) + 
+  labs(title = "Planctomycetota Phylum") + 
+  scale_color_manual(values = AgeRange_colors) + 
+  theme(legend.position = "none")
+
+# Collect both of the plots together into one 
+plant_phylum_AgeRange + plant_phylum_weight + 
+  plot_layout(guides = "collect") +
+  plot_annotation(tag_levels = "A")
+```
+
+not rly different
+
+### A4. Bacteroidota 
+
+```{r phylum-bacter, fig.width=7, fig.height=3.5}
+# Narrow in on a specific group
+# Bacteroidota - y: abundance, x: age, dot plot + boxplot
+bacter_phylum_AgeRange <- 
+  phylum_df %>%
+  dplyr::filter(Phylum == "Bacteroidota") %>%
+  # build the plot 
+  ggplot(aes(x = AgeRange, y = Abundance, 
+             fill = AgeRange, color = AgeRange)) + 
+  geom_boxplot(alpha = 0.5, outlier.shape = NA) + # outliers not plotted here in boxplot 
+  geom_jitter() + 
+  stat_compare_means(method = "kruskal.test", label = "p.format") +
+  theme_bw() + 
+  labs(title = "Bacteroidota Phylum") + 
+  scale_color_manual(values = AgeRange_colors) + 
+  scale_fill_manual(values = AgeRange_colors) + 
+    theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1),
+          legend.position = "right")
+# Statistically: Kruskall-Wallis followed by a Tukey's Posthoc test
+# These are non-parametric (non-normal) stat tests 
+
+# Separate by Sample Site and test with KW
+phylum_df %>%
+  filter(Phylum == "Bacteroidota") %>%
+  ggplot(aes(x = AgeRange, y = Abundance, fill = AgeRange, color = AgeRange)) + 
+  geom_boxplot(alpha = 0.5, outlier.shape = NA) + 
+  geom_jitter(width = 0.2, alpha = 0.6) + 
+  facet_wrap(~ SampleSite) + 
+  #stat_compare_means(method = "kruskal.test", label = "p.format") + 
+  scale_color_manual(values = AgeRange_colors) + 
+  scale_fill_manual(values = AgeRange_colors) + 
+  labs(title = "Bacteroidota Phylum by Sample Site and Age Range") + 
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1),
+        legend.position = "right")
+
+# CONTINUOUS 
+bacter_phylum_weight <- 
+  phylum_df %>%
+  dplyr::filter(Phylum == "Bacteroidota") %>%
+  ggplot(aes(x = Weight, y = Abundance)) + 
+  geom_point(aes(color = AgeRange)) + 
+  theme_bw() + 
+  geom_smooth(method = "lm",  formula = y ~ poly(x, 2)) + 
+  labs(title = "Bacteroidota Phylum") + 
+  scale_color_manual(values = AgeRange_colors) + 
+  theme(legend.position = "none")
+
+# Collect both of the plots together into one 
+bacter_phylum_AgeRange + bacter_phylum_weight + 
+  plot_layout(guides = "collect") +
+  plot_annotation(tag_levels = "A")
+```
+
+Not rly a difference
+
+Interpretation 4: I would most want to look into Verrucomicrobiota and Bacteroidota.
+
+## B. Genus
+
+Let's first calculate the genus data frame. 
+
+```{r genus--plots, fig.width=12, fig.height=4}
+# Calculate the Family relative abundance 
+# Note: The read depth MUST be normalized in some way: scale_reads
+genus_df <- 
+  scaled_physeq %>%
+  # agglomerate at the phylum level 
+  tax_glom(taxrank = "Genus") %>% 
+  # Transform counts to relative abundance 
+  transform_sample_counts(function (x) {x/sum(x)}) %>%
+  # Melt to a long format 
+  psmelt() %>%
+  # fix the order of sample site
+  mutate(SampleSite = fct_relevel(SampleSite, c("CLOACA", "ORAL", "TANK WATER")),
+         AgeRange = fct_relevel(AgeRange, c("JUVENILE", "SUB-ADULT",
+                                          "ADULT")))
+```
+
+### B1. Verrucomicrobiota Genera 
+
+```{r verr-genus, fig.width=6, fig.height=6}
+# Verrucomicrobiota
+# Plot genus 
+verr_genus_AgeRange <- 
+  genus_df %>%
+  dplyr::filter(Phylum == "Verrucomicrobiota") %>%
+  dplyr::filter(SampleSite == "CLOACA") %>%
+  # At first, plot all of the genera and then subset the ones that have intersting trends
+  dplyr::filter(Genus %in% c("Rubritalea", "Diplosphaera")) %>%
+  # build the plot 
+  ggplot(aes(x = AgeRange, y = Abundance, 
+             fill = AgeRange, color = AgeRange)) + 
+  facet_wrap(.~Genus, scales = "free_y", nrow = 1) + 
+  geom_boxplot(alpha = 0.5, outlier.shape = NA) + # outliers not plotted here in boxplot 
+  geom_jitter() + 
+  theme_bw() + 
+  labs(title = "Verrucomicrobiota Genera in Cloaca") + 
+  scale_color_manual(values = AgeRange_colors) + 
+  scale_fill_manual(values = AgeRange_colors) + 
+  theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1),
+        legend.position = "none")
+
+# Plot genus: Continuous 
+verr_genus_weight <- 
+  genus_df %>%
+  dplyr::filter(Phylum == "Verrucomicrobiota") %>%
+  dplyr::filter(SampleSite == "CLOACA") %>%
+  dplyr::filter(Genus %in% c("Rubritalea", "Diplosphaera")) %>%
+  # build the plot 
+  ggplot(aes(x = Weight, y = Abundance)) + 
+  facet_wrap(.~Genus, scales = "free_y", nrow = 1) + 
+  geom_point(aes(color = AgeRange)) +  theme_bw() + 
+  geom_smooth(method = "lm",  formula = y ~ poly(x, 2)) + 
+  labs(title = "Verrucomicrobiota Genera in Cloaca") + 
+  scale_color_manual(values = AgeRange_colors) + 
+  theme(legend.position = "none")
+
+# Collect the Actinomycetota Plots
+verr_genus_AgeRange / verr_genus_weight + 
+  plot_layout(guides = "collect") +
+  plot_annotation(tag_levels = "A")
+```
+
+There's rly no difference 
+
+### B2. Bacteroidota Genera 
+
+```{r bacter-genus, fig.width=6, fig.height=6}
+# Bacteroidota
+# Plot genus 
+bacter_genus_AgeRange <- 
+  genus_df %>%
+  dplyr::filter(Phylum == "Bacteroidota") %>%
+  dplyr::filter(SampleSite == "CLOACA") %>%
+  # At first, plot all of the genera and then subset the ones that have intersting trends
+  dplyr::filter(Genus %in% c("Tenacibaculum", "Bacteroides")) %>%
+  # build the plot 
+  ggplot(aes(x = AgeRange, y = Abundance, 
+             fill = AgeRange, color = AgeRange)) + 
+  facet_wrap(.~Genus, scales = "free_y", nrow = 1) + 
+  geom_boxplot(alpha = 0.5, outlier.shape = NA) + # outliers not plotted here in boxplot 
+  geom_jitter() + 
+  stat_compare_means(method = "kruskal.test", label = "p.format") + 
+  theme_bw() + 
+  labs(title = "Bacteroidota Genera in Cloaca") + 
+  scale_color_manual(values = AgeRange_colors) + 
+  scale_fill_manual(values = AgeRange_colors) + 
+  theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1),
+        legend.position = "none")
+
+# Plot genus: Continuous 
+bacter_genus_weight <- 
+  genus_df %>%
+  dplyr::filter(Phylum == "Bacteroidota") %>%
+  dplyr::filter(SampleSite == "CLOACA") %>%
+  dplyr::filter(Genus %in% c("Tenacibaculum", "Bacteroides")) %>%
+  # build the plot 
+  ggplot(aes(x = Weight, y = Abundance)) + 
+  facet_wrap(.~Genus, scales = "free_y", nrow = 1) + 
+  geom_point(aes(color = AgeRange)) +  theme_bw() + 
+  geom_smooth(method = "lm",  formula = y ~ poly(x, 2)) + 
+  labs(title = "Bacteroidota Genera in Cloaca") + 
+  scale_color_manual(values = AgeRange_colors) + 
+  theme(legend.position = "none")
+
+# Collect the Bacteroidota Plots
+bacter_genus_AgeRange / bacter_genus_weight + 
+  plot_layout(guides = "collect") +
+  plot_annotation(tag_levels = "A")
+```
+
+## C. ASV level
+
+Now, let's take a look at the ASVs. This is where the *real* ecology/biology happens! This is because the ASV-level plots will provide us with a more detailed view of **which specific taxa (ASVs) are driving the overall trends seen at the higher taxonomic levels (e.g. phylum)** in relation to salinity gradients and station differences.
+
+Before we calculate the ASV-level abundances, let's take a second to think about *who* we'd like to consider. There's a lot of ASVs! In fact, there are `r ntaxa(scaled_physeq)`! It is difficult analyze all of them! Therefore, we will remove ASVs that have an overall count across the entire dataset of 1,732 or 1% of a scaled sample to 17,323. This is a little arbitrary and therefore, you may choose a different threshold for your dataset. The goal here is to **dramatically decreases the number of ASVs in the dataset** to help make the ASV-level data analysis much easier. 
+
+Of course, if we had more time in class, we could run differential abundance and this would also help us to identify and statistically test which ASVs are important and also help us narrow on specific ASVs. 
+
+The goal with this lesson is to do some data exploration and then also test ASVs that are relevant for our specific study. Let's go! 
+
+```{r ASV-plots, fig.width=12, fig.height=4}
+# Calculate the Family relative abundance 
+# Note: The read depth MUST be normalized in some way: scale_reads
+ASV_df <- 
+  scaled_physeq %>%
+  # Prune out ASVs that have fewer than 100 counts! 
+  ## LOOK AT HOW MANY ARE REMOVED! We scaled to 17,323 reads! :O
+  prune_taxa(taxa_sums(.) >= 1732, .) %>%
+  # agglomerate at the phylum level 
+  tax_glom(taxrank = "ASV") %>% 
+  # Transform counts to relative abundance 
+  transform_sample_counts(function (x) {x/sum(x)}) %>%
+  # Melt to a long format 
+  psmelt() %>%
+  # fix the order of age sample site
+  mutate(SampleSite = fct_relevel(SampleSite, c("CLOACA", "ORAL", "TANK WATER")),
+         AgeRange = fct_relevel(AgeRange, c("JUVENILE", "SUB-ADULT",
+                                          "ADULT")))
+```
+
+### C1. Bacillota ASVs 
+
+There are only Bacillota and Bacteroidota in this dataframe, so I cannot investigate the others.
+
+```{r bacil-asvs, fig.width=6, fig.height=8}
+# Calculate top couple of ASVs 
+# Make a list of phyla the top phyla 
+top_bacil_ASVs <- 
+  ASV_df %>%
+  dplyr::filter(Phylum == "Bacillota") %>%
+  group_by(ASV) %>%
+  summarize(mean_Abundance = mean(Abundance)) %>%
+  dplyr::filter(mean_Abundance > 0.005) %>%
+  pull(ASV)
+
+# Bacillota
+# Plot ASVs 
+bacil_asv_AgeRange <- 
+  ASV_df %>%
+  dplyr::filter(ASV %in% top_bacil_ASVs) %>%
+  # build the plot 
+  ggplot(aes(x = AgeRange, y = Abundance, 
+             fill = AgeRange, color = AgeRange)) + 
+  facet_wrap(Genus~ASV, scales = "free_y", nrow = 2) + 
+  geom_boxplot(alpha = 0.5, outlier.shape = NA) + # outliers not plotted here in boxplot 
+  geom_jitter() + 
+  theme_bw() + 
+  labs(title = "Bacillota ASVs") + 
+  scale_color_manual(values = AgeRange_colors) + 
+  scale_fill_manual(values = AgeRange_colors) + 
+  theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1),
+        legend.position = "none")
+
+# Plot ASVs: Continuous 
+bacil_asv_weight <- 
+  ASV_df %>%
+  dplyr::filter(ASV %in% top_bacil_ASVs) %>%
+  # build the plot 
+  ggplot(aes(x = Weight, y = Abundance)) + 
+  facet_wrap(Genus~ASV, scales = "free_y", nrow = 2) + 
+  geom_point(aes(color = AgeRange)) +  theme_bw() + 
+  geom_smooth(method = "lm",  formula = y ~ poly(x, 2)) + 
+  labs(title = "Bacillota ASVs") + 
+  scale_color_manual(values = AgeRange_colors) + 
+  theme(legend.position = "none")
+
+# Collect the Bacillota Plots
+bacil_asv_AgeRange / bacil_asv_weight + 
+  plot_layout(guides = "collect") +
+  plot_annotation(tag_levels = "A")
+```
+
+there's rly no difference 
+
+### C2. Bacteroidota ASVs
+
+```{r bacter-asvs, fig.width=6, fig.height=8}
+# Calculate top couple of ASVs 
+# Make a list of phyla the top phyla 
+top_bacter_ASVs <- 
+  ASV_df %>%
+  dplyr::filter(Phylum == "Bacteroidota") %>%
+  group_by(ASV) %>%
+  summarize(mean_Abundance = mean(Abundance)) %>%
+  dplyr::filter(mean_Abundance > 0.005) %>%
+  pull(ASV)
+
+# Bacteroidota
+# Plot ASVs 
+bacter_asv_AgeRange <- 
+  ASV_df %>%
+  dplyr::filter(ASV %in% top_bacter_ASVs) %>%
+  # build the plot 
+  ggplot(aes(x = AgeRange, y = Abundance, 
+             fill = AgeRange, color = AgeRange)) + 
+  facet_wrap(Genus~ASV, scales = "free_y", nrow = 2) + 
+  geom_boxplot(alpha = 0.5, outlier.shape = NA) + # outliers not plotted here in boxplot 
+  geom_jitter() + 
+  theme_bw() + 
+  labs(title = "Bacteroidota ASVs") + 
+  scale_color_manual(values = AgeRange_colors) + 
+  scale_fill_manual(values = AgeRange_colors) + 
+  theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1),
+        legend.position = "none")
+
+# Plot ASVs: Continuous 
+bacter_asv_weight <- 
+  ASV_df %>%
+  dplyr::filter(ASV %in% top_bacter_ASVs) %>%
+  # build the plot 
+  ggplot(aes(x = Weight, y = Abundance)) + 
+  facet_wrap(Genus~ASV, scales = "free_y", nrow = 2) + 
+  geom_point(aes(color = AgeRange)) +  theme_bw() + 
+  geom_smooth(method = "lm",  formula = y ~ poly(x, 2)) + 
+  labs(title = "Bacteroidota ASVs") + 
+  scale_color_manual(values = AgeRange_colors) + 
+  theme(legend.position = "none")
+
+# Collect the Bacteroidota Plots
+bacter_asv_AgeRange / bacter_asv_weight + 
+  plot_layout(guides = "collect") +
+  plot_annotation(tag_levels = "A")
+
+# choose specific ASVs to make graphs easier to see 
+# Plot ASVs 
+bacter_asv_AgeRange_filtered <- 
+  ASV_df %>%
+  dplyr::filter(ASV %in% top_bacter_ASVs) %>%
+  dplyr::filter(SampleSite == "CLOACA") %>%
+  dplyr::filter(ASV %in% c("ASV_0010", "ASV_0031", "ASV_0044", "ASV_0083", "ASV_0074")) %>%
+  # build the plot 
+  ggplot(aes(x = AgeRange, y = Abundance, 
+             fill = AgeRange, color = AgeRange)) + 
+  facet_wrap(Genus~ASV, scales = "free_y", nrow = 2) + 
+  geom_boxplot(alpha = 0.5, outlier.shape = NA) + # outliers not plotted here in boxplot 
+  geom_jitter() + 
+  theme_bw() + 
+  labs(title = "Bacteroidota ASVs") + 
+  scale_color_manual(values = AgeRange_colors) + 
+  scale_fill_manual(values = AgeRange_colors) + 
+  theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1),
+        legend.position = "none")
+
+# Plot ASVs: Continuous 
+bacter_asv_weight_filtered <- 
+  ASV_df %>%
+  dplyr::filter(ASV %in% top_bacter_ASVs) %>%
+  dplyr::filter(SampleSite == "CLOACA") %>%
+  dplyr::filter(ASV %in% c("ASV_0010", "ASV_0031", "ASV_0044", "ASV_0083", "ASV_0074")) %>%
+  # build the plot 
+  ggplot(aes(x = Weight, y = Abundance)) + 
+  facet_wrap(Genus~ASV, scales = "free_y", nrow = 2) + 
+  geom_point(aes(color = AgeRange)) +  theme_bw() + 
+  geom_smooth(method = "lm",  formula = y ~ poly(x, 2)) + 
+  labs(title = "Bacteroidota ASVs") + 
+  scale_color_manual(values = AgeRange_colors) + 
+  theme(legend.position = "none")
+
+# Collect the Bacteroidota Plots
+bacter_asv_AgeRange_filtered / bacter_asv_weight_filtered + 
+  plot_layout(guides = "collect") +
+  plot_annotation(tag_levels = "A")
+
+```
+
+ASV_0002 gained with age
+
+ASV_0097 lost with age 
+
+ASV_0055 completely gone in adults
+
+Potentially slight trend of losing ASVs with age 
+
+Interpretation 6: **replace**
+
+Interpretation 7: **replace**
+
+Interpretation 8: **replace**
+
+# Session Information 
+For reproducibility 
+```{r session_info}
+devtools::session_info()
+```
+
+
+
+
+
+  

@@ -602,7 +602,7 @@ obs_div_df %>%
         legend.title = element_blank())
 ```
  
- ### Explore Richness More
+### Explore Richness More
 
 ```{r richness-vs-weight}
 # Make a richness data frame
@@ -713,14 +713,15 @@ rich_weight_plot + shan_weight_plot + simps_weight_plot
 ```
 
 Null: There is no correlation between the variables
- - Rho slightly less than 0: Weak negative correlation.
- - p-value > 0.05: no significant correlation.
+
+  - Rho slightly less than 0: Weak negative correlation.
+  - p-value > 0.05: no significant correlation.
  
  Interpretation 4: It looks like ASVs (all, common, and dominant) do not differ between Loggerhead sea turtles of different weights. 
  
  Interpretation 5: I used Spearman correlations to test my data because my data is not normal. 
  
- # Final info for Reproducibility 
+# Final info for Reproducibility 
 
 ## Check Render Time
 ```{r stop-time}
@@ -739,23 +740,4 @@ elapsed_time
 # Ensure reproducibility with package version information
 devtools::session_info()
 ```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
