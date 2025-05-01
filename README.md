@@ -3,6 +3,7 @@
 ## BIOMI6300 16S Amplion Sequencing Project
 
 ### Project Background
+---
 
 This project was done as a part of BIOMI6300 *Computational Approaches for Microbial Systems* at Cornell University with Dr. Mar Schmidt.
 
@@ -20,6 +21,7 @@ DNA was extracted with DNeasy PowerSoil kit (Qiagen).
   - Reverse primer 805R: 5'-GACTACHVGGGTATCTAATCC-3'
   
 ### Hypotheses regarding loggerhead sea turtle microbial communities
+---
 
 **Null Hypothesis:** Alpha and beta diversity do not vary with age.
 
