@@ -40,7 +40,7 @@ Interpretation 1: Interpreting microbial abundance from relative (aka. compositi
 # Load Packages
 
 ```{r load-packages}
-pacman::p_load(tidyverse, devtools, DT, phyloseq, patchwork, install = FALSE)
+pacman::p_load(tidyverse, devtools, DT, phyloseq, patchwork, ggpubr, install = FALSE)
 
 # load colors
 source("code/colors.R")
@@ -120,28 +120,7 @@ Visualization helps detect patterns in composition and abundance that statistica
 
 Therefore, we will also explore faceted and jittered boxplots below the bar plots to see sample-level trends more clearly.
 
-```{r phylum-stacked-bar, fig.width=9, fig.height=3.5}
-# Stacked Bar Plot With All phyla 
-# Plot Phylum Abundances - make sure to load phylum_colors 
-phylum_df %>%
-  dplyr::filter(Phylum %in% top10_phyla) %>%
-  # Warning: It's important to have one sample per x value, 
-  # otherwise, it will take the sum between multiple samples
-  # chose one turtle for juvenile, sub-adult, and adult, but I don't think this looks right
-  dplyr::filter(TurtleName == c("MARVIN", "MARO", "SAMBA")) %>%
-  ggplot(aes(x = SampleSite, y = Abundance, fill = Phylum)) + 
-  facet_grid(.~AgeRange) + 
-  geom_bar(stat = "identity", color = "black") + 
-  labs(title = "Top 10 Phyla: Surface Samples") + 
-  scale_fill_manual(values = phylum_colors) + 
-  theme_bw() + 
-  theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1))
-
-#Relative abundance needs to be between 0 and 1, or else you're plotting more than one sample
-
-```
-
-```{r phylum-stacked-bar-samplesAges, fig.width=9, fig.height=4}
+```{r phylum-stacked-bar-samplesAges, fig.width=12, fig.height=4}
 # Stacked Bar Plot looking at all samples and grouping by age range
 # Plot Phylum Abundances - make sure to load phylum_colors 
 phylum_df %>%
@@ -149,7 +128,7 @@ phylum_df %>%
   ggplot(aes(x = Sample, y = Abundance, fill = Phylum)) + 
   facet_grid(. ~ AgeRange, scales = "free_x", space = "free_x") + 
   geom_bar(stat = "identity", color = "black") + 
-  labs(title = "Top 10 Phyla per Turtle") + 
+  labs(title = "Top 10 Phyla per Turtle by Age") + 
   scale_fill_manual(values = phylum_colors) + 
   theme_bw() + 
   theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1),
@@ -158,7 +137,7 @@ phylum_df %>%
 
 ```
 
-```{r phylum-stacked-bar-samplesSites, fig.width=9, fig.height=4}
+```{r phylum-stacked-bar-samplesSites, fig.width=12, fig.height=4}
 # Stacked Bar Plot looking at all samples and grouping by sample site 
 # Plot Phylum Abundances - make sure to load phylum_colors 
 phylum_df %>%
@@ -166,7 +145,7 @@ phylum_df %>%
   ggplot(aes(x = Sample, y = Abundance, fill = Phylum)) + 
   facet_grid(. ~ SampleSite, scales = "free_x", space = "free_x") + 
   geom_bar(stat = "identity", color = "black") + 
-  labs(title = "Top 10 Phyla per Turtle") + 
+  labs(title = "Top 10 Phyla per Turtle by Sample Site") + 
   scale_fill_manual(values = phylum_colors) + 
   theme_bw() + 
   theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1),
@@ -174,7 +153,7 @@ phylum_df %>%
         panel.spacing = unit(1, "lines"))
 ```
 
-```{r phylum-stacked-bar-samplesAgesSites, fig.width=9, fig.height=7}
+```{r phylum-stacked-bar-samplesAgesSites, fig.width=12, fig.height=7}
 # Stacked Bar Plot looking at all samples and grouping by age AND sample site
 # Plot Phylum Abundances - make sure to load phylum_colors 
 phylum_df %>%
@@ -182,7 +161,7 @@ phylum_df %>%
   ggplot(aes(x = Sample, y = Abundance, fill = Phylum)) + 
   facet_grid(SampleSite ~ AgeRange, scales = "free_x", space = "free_x") + 
   geom_bar(stat = "identity", color = "black") + 
-  labs(title = "Top 10 Phyla per Turtle by Sample Site and Age Range") + 
+  labs(title = "Top 10 Phyla per Turtle by Age and Sample Site") + 
   scale_fill_manual(values = phylum_colors) + 
   theme_bw() + 
   theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1),
@@ -233,7 +212,7 @@ phylum_df %>%
   geom_boxplot(outlier.shape = NA, alpha = 0.5) + 
   # change the colors to be our selected colors 
   scale_fill_manual(values = phylum_colors) + 
-  scale_color_manual(values = phylum_colors) + 
+  scale_color_manual(values = phylum_colors) +
   theme_bw() + 
   theme(legend.position = "none",
         axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1))
@@ -334,18 +313,24 @@ phylum_df %>%
         axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1))
 ```
 
-**notes**
-- some phyla unique to adults or sub-adults? (Dependentiae, Thermodesulfobacteriota, Balneolota)
-- some phyla shared between ages (Bacteroidota, Pseudomonadota)
-- some phyla differ across ages (sub-adult Verrucomicrobiota)
+Interpretation 3:
+Microbial community composition varied more by sample site than by age range. In many cases, phyla were present in cloacal and oral samples but not tank water samples, and vice versa. Where a phylum was present in all 3 sample sites, it was also present in all 3 age groups.
 
-After initial exploration, we focus on specific phyla that appear to vary across ages. These targeted plots help develop hypotheses about ecological drivers.
+Some specific results:
 
-- Verrucomicrobiota - paper said this phyla appears more in juveniles
+  - **Verrucomicrobiota and Spirochaeota** appears more in juvenile cloacal samples.
+  - **Myxococcota** possibly appears more in juveniles.
+  - **Bacteroidota and Pseudomonadota** are present in all sample sites in all age ranges.
+  - **Bacillota** is more prevalent in cloacal samples. 
+
+
+After initial exploration, we can focus on specific phyla that appear to vary across ages and sample sites. These targeted plots help develop hypotheses about ecological drivers.
+
+- Verrucomicrobiota --> The paper said this phylum appears more in juveniles
 - Myxococcota
 - Planctomycetota
-- Bacteroidota --> paper said juveniles had more Flavobacteriales/Tenacibaculum and adults had more Bacteriodales
-  - Tenacibaculum is marine pathogen
+- Bacteroidota --> The paper said juveniles had more Flavobacteriales/Tenacibaculum and adults had more Bacteriodales
+  - Tenacibaculum --> a marine pathogen
 
 ### A1. Verrucomicrobiota 
 
@@ -374,7 +359,7 @@ phylum_df %>%
   geom_boxplot(alpha = 0.5, outlier.shape = NA) + 
   geom_jitter(width = 0.2, alpha = 0.6) + 
   facet_wrap(~ SampleSite) + 
-  #stat_compare_means(method = "kruskal.test", label = "p.format") + 
+  stat_compare_means(method = "kruskal.test", label = "p.format") + 
   scale_color_manual(values = AgeRange_colors) + 
   scale_fill_manual(values = AgeRange_colors) + 
   labs(title = "Verrucomicrobiota Phylum by Sample Site and Age Range") + 
@@ -404,8 +389,9 @@ verrucom_phylum_AgeRange + verrucom_phylum_weight +
   plot_annotation(tag_levels = "A")
 ```
 
-Def more in juveniles when looking at Cloaca 
-Possibly more in sub-adults when looking at Oral
+Verrucomicrobiota is more abundant in juvenile cloacal samples compared to sub-adults and adults, where the phylum is completely missing.
+Verrucomicrobiota is a phylum of gram-negative bacteria containing only a few described species. They have been isolated from fresh water, soil, and human feces. Some species are thought to be human intestinal symbiotic bacteria.
+
 
 ### A2. Myxococcota 
 
@@ -436,7 +422,7 @@ phylum_df %>%
   geom_boxplot(alpha = 0.5, outlier.shape = NA) + 
   geom_jitter(width = 0.2, alpha = 0.6) + 
   facet_wrap(~ SampleSite) + 
-  #stat_compare_means(method = "kruskal.test", label = "p.format") + 
+  stat_compare_means(method = "kruskal.test", label = "p.format") + 
   scale_color_manual(values = AgeRange_colors) + 
   scale_fill_manual(values = AgeRange_colors) + 
   labs(title = "Myxococcota Phylum by Sample Site and Age Range") + 
@@ -462,7 +448,9 @@ myxoc_phylum_AgeRange + myxoc_phylum_weight +
   plot_annotation(tag_levels = "A")
 ```
 
-lower in sub-adults?
+Myxococcota are lowest in abundacde in sub-adults, and possibly higher in juveniles, although not statistically significant. 
+Myxococcota are gram-negative aerobic spore-forming bacteria. These bacteria are known for their predation and fruiting body formation.
+
 
 ### A3. Planctomycetota 
 
@@ -493,7 +481,7 @@ phylum_df %>%
   geom_boxplot(alpha = 0.5, outlier.shape = NA) + 
   geom_jitter(width = 0.2, alpha = 0.6) + 
   facet_wrap(~ SampleSite) + 
-  #stat_compare_means(method = "kruskal.test", label = "p.format") + 
+  stat_compare_means(method = "kruskal.test", label = "p.format") + 
   scale_color_manual(values = AgeRange_colors) + 
   scale_fill_manual(values = AgeRange_colors) + 
   labs(title = "Planctomycetota Phylum by Sample Site and Age Range") + 
@@ -519,7 +507,8 @@ plant_phylum_AgeRange + plant_phylum_weight +
   plot_annotation(tag_levels = "A")
 ```
 
-not rly different
+Planctomycetota may be more prevalent in sub-adults.
+Planctomycetota is a widely disributed phylum. Some species are described as human pathogens. Many species are capable of anaerobic ammonium oxidation. 
 
 ### A4. Bacteroidota 
 
@@ -551,7 +540,7 @@ phylum_df %>%
   geom_boxplot(alpha = 0.5, outlier.shape = NA) + 
   geom_jitter(width = 0.2, alpha = 0.6) + 
   facet_wrap(~ SampleSite) + 
-  #stat_compare_means(method = "kruskal.test", label = "p.format") + 
+  stat_compare_means(method = "kruskal.test", label = "p.format") + 
   scale_color_manual(values = AgeRange_colors) + 
   scale_fill_manual(values = AgeRange_colors) + 
   labs(title = "Bacteroidota Phylum by Sample Site and Age Range") + 
@@ -577,9 +566,10 @@ bacter_phylum_AgeRange + bacter_phylum_weight +
   plot_annotation(tag_levels = "A")
 ```
 
-Not rly a difference
+Bacteroidota are found in relatively high abundance in all age groups, possibly a little higher in sub-adults.
+Bacteroidota species can be opportunistic pathogens or symbionts. 
 
-Interpretation 4: I would most want to look into Verrucomicrobiota and Bacteroidota.
+Interpretation 4: I would most want to look into Verrucomicrobiota and Bacteroidota. The paper my dataset is from said Verrucomicrobiota is seen more in juveniles, but I only see this in juvenile cloaca. I am interested to see what genera these are. Bacteroidota is found in all age groups and sample sites, and I am interested to know if these are pathogens or symbionts. 
 
 ## B. Genus
 
@@ -647,7 +637,8 @@ verr_genus_AgeRange / verr_genus_weight +
   plot_annotation(tag_levels = "A")
 ```
 
-There's rly no difference 
+Interpretation 5:
+While Verrucomicrobiota are in general more prevalent in juvenile cloacal samples, there appears to really only be one genera contributing to this, *Rubritalae*. There is also a very small amount of *Diplosphaera* in sub-adult cloaca. 
 
 ### B2. Bacteroidota Genera 
 
@@ -657,7 +648,7 @@ There's rly no difference
 bacter_genus_AgeRange <- 
   genus_df %>%
   dplyr::filter(Phylum == "Bacteroidota") %>%
-  dplyr::filter(SampleSite == "CLOACA") %>%
+  # dplyr::filter(SampleSite == "CLOACA") %>%
   # At first, plot all of the genera and then subset the ones that have intersting trends
   dplyr::filter(Genus %in% c("Tenacibaculum", "Bacteroides")) %>%
   # build the plot 
@@ -668,24 +659,41 @@ bacter_genus_AgeRange <-
   geom_jitter() + 
   stat_compare_means(method = "kruskal.test", label = "p.format") + 
   theme_bw() + 
-  labs(title = "Bacteroidota Genera in Cloaca") + 
+  labs(title = "Bacteroidota Genera by Age") + 
   scale_color_manual(values = AgeRange_colors) + 
   scale_fill_manual(values = AgeRange_colors) + 
   theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1),
         legend.position = "none")
 
+bacter_genus_AgeRangeSampleSite <- 
+  genus_df %>%
+  dplyr::filter(Phylum == "Bacteroidota") %>%
+  dplyr::filter(Genus %in% c("Tenacibaculum", "Bacteroides")) %>%
+  ggplot(aes(x = AgeRange, y = Abundance, 
+             fill = AgeRange, color = AgeRange)) + 
+  facet_grid(Genus ~ SampleSite, scales = "free_y") + 
+  geom_boxplot(alpha = 0.5, outlier.shape = NA) + 
+  geom_jitter(width = 0.2, alpha = 0.6) + 
+  stat_compare_means(method = "kruskal.test", label = "p.format") + 
+  theme_bw() + 
+  labs(title = "Bacteroidota Genera by Age and Sample Site") + 
+  scale_color_manual(values = AgeRange_colors) + 
+  scale_fill_manual(values = AgeRange_colors) + 
+  theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1),
+        legend.position = "none")
+
+
 # Plot genus: Continuous 
 bacter_genus_weight <- 
   genus_df %>%
   dplyr::filter(Phylum == "Bacteroidota") %>%
-  dplyr::filter(SampleSite == "CLOACA") %>%
   dplyr::filter(Genus %in% c("Tenacibaculum", "Bacteroides")) %>%
   # build the plot 
   ggplot(aes(x = Weight, y = Abundance)) + 
   facet_wrap(.~Genus, scales = "free_y", nrow = 1) + 
   geom_point(aes(color = AgeRange)) +  theme_bw() + 
   geom_smooth(method = "lm",  formula = y ~ poly(x, 2)) + 
-  labs(title = "Bacteroidota Genera in Cloaca") + 
+  labs(title = "Bacteroidota Genera by Age") + 
   scale_color_manual(values = AgeRange_colors) + 
   theme(legend.position = "none")
 
@@ -693,7 +701,14 @@ bacter_genus_weight <-
 bacter_genus_AgeRange / bacter_genus_weight + 
   plot_layout(guides = "collect") +
   plot_annotation(tag_levels = "A")
+
+bacter_genus_AgeRangeSampleSite
 ```
+
+*Tenacibaculum* is more abundant in juvenile cloacal samples, but still found in all ages and sample sites. This is important because *Tenacibaculum* are marine pathogen that cause tenacibaculosis.
+*Bacteroides* is more abundant in sub-adult cloacal samples, but still found in all ages and sample sites. This genera is a common inhabitant of the gut microbiota of both sea and freshwater turtles and may aid in digestion. 
+
+Interpretation 5: While the phylum Bacteroidota appeared more in sub-adult cloacal samples, this seems to be due primarly to the genus *Bacteroides*. The genus *Tenacibaculum*, however, is more abundant in juvenile cloacal samples. 
 
 ## C. ASV level
 
@@ -727,7 +742,7 @@ ASV_df <-
 
 ### C1. Bacillota ASVs 
 
-There are only Bacillota and Bacteroidota in this dataframe, so I cannot investigate the others.
+**Note:** There are only Bacillota and Bacteroidota in this dataframe, so I cannot investigate the others.
 
 ```{r bacil-asvs, fig.width=6, fig.height=8}
 # Calculate top couple of ASVs 
@@ -771,13 +786,31 @@ bacil_asv_weight <-
   scale_color_manual(values = AgeRange_colors) + 
   theme(legend.position = "none")
 
+bacil_asv_AgeSample <- 
+  ASV_df %>%
+  dplyr::filter(ASV %in% top_bacil_ASVs) %>%
+  ggplot(aes(x = AgeRange, y = Abundance, 
+             fill = AgeRange, color = AgeRange)) + 
+  facet_grid(SampleSite ~ Genus + ASV, scales = "free_y") + 
+  geom_boxplot(alpha = 0.5, outlier.shape = NA) + 
+  geom_jitter(width = 0.2, alpha = 0.6) + 
+  theme_bw() + 
+  labs(title = "Bacillota ASVs by Age Range and Sample Site") + 
+  scale_color_manual(values = AgeRange_colors) + 
+  scale_fill_manual(values = AgeRange_colors) + 
+  theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1),
+        legend.position = "none")
+
+
 # Collect the Bacillota Plots
 bacil_asv_AgeRange / bacil_asv_weight + 
   plot_layout(guides = "collect") +
   plot_annotation(tag_levels = "A")
+
+bacil_asv_AgeSample
 ```
 
-there's rly no difference 
+*Vagococcus* ASV_0061 is slighly higher in abundance in adult tank water. Besides that, there is not much to say.
 
 ### C2. Bacteroidota ASVs
 
@@ -834,7 +867,8 @@ bacter_asv_AgeRange_filtered <-
   ASV_df %>%
   dplyr::filter(ASV %in% top_bacter_ASVs) %>%
   dplyr::filter(SampleSite == "CLOACA") %>%
-  dplyr::filter(ASV %in% c("ASV_0010", "ASV_0031", "ASV_0044", "ASV_0083", "ASV_0074")) %>%
+  dplyr::filter(Genus %in% c("Tenacibaculum", "Bacteroides")) %>%
+  #dplyr::filter(ASV %in% c("ASV_0010", "ASV_0031", "ASV_0044", "ASV_0083", "ASV_0074")) %>%
   # build the plot 
   ggplot(aes(x = AgeRange, y = Abundance, 
              fill = AgeRange, color = AgeRange)) + 
@@ -842,7 +876,7 @@ bacter_asv_AgeRange_filtered <-
   geom_boxplot(alpha = 0.5, outlier.shape = NA) + # outliers not plotted here in boxplot 
   geom_jitter() + 
   theme_bw() + 
-  labs(title = "Bacteroidota ASVs") + 
+  labs(title = "Bacteroidota ASVs in Cloaca") + 
   scale_color_manual(values = AgeRange_colors) + 
   scale_fill_manual(values = AgeRange_colors) + 
   theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1),
@@ -853,13 +887,14 @@ bacter_asv_weight_filtered <-
   ASV_df %>%
   dplyr::filter(ASV %in% top_bacter_ASVs) %>%
   dplyr::filter(SampleSite == "CLOACA") %>%
-  dplyr::filter(ASV %in% c("ASV_0010", "ASV_0031", "ASV_0044", "ASV_0083", "ASV_0074")) %>%
+  dplyr::filter(Genus %in% c("Tenacibaculum", "Bacteroides")) %>%
+  #dplyr::filter(ASV %in% c("ASV_0010", "ASV_0031", "ASV_0044", "ASV_0083", "ASV_0074")) %>%
   # build the plot 
   ggplot(aes(x = Weight, y = Abundance)) + 
   facet_wrap(Genus~ASV, scales = "free_y", nrow = 2) + 
   geom_point(aes(color = AgeRange)) +  theme_bw() + 
   geom_smooth(method = "lm",  formula = y ~ poly(x, 2)) + 
-  labs(title = "Bacteroidota ASVs") + 
+  labs(title = "Bacteroidota ASVs in Cloaca") + 
   scale_color_manual(values = AgeRange_colors) + 
   theme(legend.position = "none")
 
@@ -870,19 +905,13 @@ bacter_asv_AgeRange_filtered / bacter_asv_weight_filtered +
 
 ```
 
-ASV_0002 gained with age
+There are 5 ASVs associated with *Tenacibaculum* in cloacal samples (56, 72, 74, 83, 84) and only one ASV associated with *Bacteroides* (10). ASV_0083 contributes the most to juvenile cloacal *Tenacibaculum*. 
 
-ASV_0097 lost with age 
+Interpretation 6: With regards to Cloacal Bacteroidata, there was only 1 ASV that is also highly abundant in the whole dataset (ASV_0010).
 
-ASV_0055 completely gone in adults
+Interpretation 7: ASV_0083 contributed the most to the higher relative abundance of *Tenacibaculum* in juvenile cloaca. ASV_0010 contributed the most to the higher relative abundace of *Bacteroides* in sub-adult cloaca. 
 
-Potentially slight trend of losing ASVs with age 
-
-Interpretation 6: **replace**
-
-Interpretation 7: **replace**
-
-Interpretation 8: **replace**
+Interpretation 8: The paper that this dataset is from said that *Tenacibaculum* was more abundant in juvenile cloacal and oral samples compared to sub-adult and adults; however, I only found *Tenacibaculum* to be more abundant in cloacal samples. This is significant because *Tenacibaculum* is a marine pathogen. The paper also said that Bacteroidales was more abundant in adults. While I did not analyze Order, I did find that *Bacteroides* is more abundant in sub-adult cloacal samples, which belongs to the Order Bacteroidales. In this regard, my findings are not in agreement. 
 
 # Session Information 
 For reproducibility 
